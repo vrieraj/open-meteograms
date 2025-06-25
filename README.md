@@ -8,13 +8,13 @@ This repository contains tools and scripts to generate **meteograms** — graphi
 - Supports hourly and daily forecast variables (temperature, wind, precipitation, etc.).
 - Custom meteogram plots using `matplotlib` and `pandas`.
 - Modular Python code for easy reuse or integration in other projects.
-- CLI or script-based generation of meteograms for any location (lat/lon).
+- Script-based generation of meteograms for any location (lat/lon).
 - Open-source and well-documented.
 
 ## 📦 Dependencies
 
 - Python ≥ 3.8  
-- `requests`, `pandas`, `matplotlib`, `argparse`  
+- `requests`, `pandas`, `matplotlib`, `seaborn`  
 - (Optional: `cartopy` or `geopandas` for spatial extensions)
 
 ## 🔗 Reference
