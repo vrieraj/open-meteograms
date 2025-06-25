@@ -1,4 +1,4 @@
-# 📈 Meteogram Generator using Open-Meteo API
+# 📈 Meteogram generator using Open-Meteo API
 
 This repository contains tools and scripts to generate **meteograms** — graphical weather forecasts — based on meteorological data retrieved from the [Open-Meteo Weather API](https://open-meteo.com/). The project is designed for users who need fast, customizable visualizations of forecast data for specific locations, particularly for environmental analysis, fieldwork planning, or educational purposes.
 
