@@ -219,16 +219,15 @@ def select_models(list_model) -> list[dict]:
     return models_selected
 
 class MeteoSfc:
-    def __init__(self, location:Place, fechas:list, modelos:dict[str, dict]):
+    def __init__(self, location:Place, fechas:list):
         self.lat = location.lat
         self.lon = location.lon
         self.elev = location.elev
         self.tzinfo = location.tzinfo
         self.fechas = fechas
-        self.modelos = modelos
         self.datos = pd.DataFrame()
 
-    def openmeteo_request(self, modelo:dict):
+    def openmeteo_request(self, fechas:list, modelo:dict):
         variables = ['temperature_2m','relative_humidity_2m','dew_point_2m',
                     'wind_speed_10m','wind_direction_10m','wind_gusts_10m','is_day']
         tipo_meteo = 'api' if modelo['type'] == 'forecast' else 'archive-api'
@@ -239,8 +238,8 @@ class MeteoSfc:
             elevation={self.elev},
             hourly={",".join(variables)},
             timezone=self.tzinfo,
-            start_date={self.fechas[0]},
-            end_date={self.fechas[1]},
+            start_date={fechas[0]},
+            end_date={fechas[1]},
             models={modelo["keyword"]}
         )
         response = requests.get(url, params=params)
@@ -344,12 +343,24 @@ class MeteoSfc:
 
         return datos
     
-    def get_data(self) -> pd.DataFrame:
-        for model_name, model_data in self.modelos.items():
-            openmeteo_data = self.openmeteo_request(model_data)
+    def get_data_models(self, modelos:dict[str, dict]) -> pd.DataFrame:
+        for model_name, model_data in modelos.items():
+            openmeteo_data = self.openmeteo_request(self.fechas, model_data)
             df = self.transform_data(pd.DataFrame(openmeteo_data['hourly']))
             df['model'] = model_name
             self.datos = pd.concat([self.datos, df],ignore_index=True)
+        return self.datos
+
+    def get_data_years(self, years:list) -> pd.DataFrame:
+        year_now, month_init, day_init = self.fechas[0].split('-')
+        year_now, month_end, day_end = self.fechas[1].split('-')
+        for year in years:
+            fechas = ['-'.join([str(year),month_init, day_init]), '-'.join([str(year),month_end, day_end])]
+            openmeteo_data = self.openmeteo_request(fechas, weather_models['ERA5'])
+            df = self.transform_data(pd.DataFrame(openmeteo_data['hourly']))
+            df['year'] = year
+            self.datos = pd.concat([self.datos, df],ignore_index=True)
+        self.datos['year'] = self.datos['year'].fillna(year_now)
         return self.datos
 
 #### METEOGRAMS PLOTS ####
@@ -360,7 +371,13 @@ class MeteoPlot:
         final = sfc_data.time.dt.strftime('%Y-%m-%d') <= fechas[1]
 
         self.datos = sfc_data.loc[(inicio) & (final)]
+        self.fechas = [self.format_fecha(fecha, format = '%d-%b') for fecha in fechas]
         self.meteoplot()
+
+    def format_fecha(self, fecha:str, format:str):
+        year, month, day = map(int, fecha.split('-'))
+        fecha = dt.datetime(year, month, day).strftime(format)
+        return fecha
 
     def meteoplot(self) -> plt.Figure:
             colores = {
@@ -423,7 +440,7 @@ class MeteoPlot:
             ax[2].set_xticklabels(datos.time.dt.strftime('%d-%b').unique())
             ax[2].set_xlabel('Source: Open-Meteo.com Weather API')
 
-            fig.suptitle(f'Meteogram {', '.join(self.datos.model.unique())} | {datos.time.dt.strftime('%d-%m-%Y').min()} - {datos.time.dt.strftime('%d-%m-%Y').max()}',
+            fig.suptitle(f'Meteogram {', '.join(self.datos.model.unique())} | {self.fechas[0]} - {self.fechas[1]}',
                         fontsize=12, 
                         fontweight='bold')
             fig.tight_layout()
