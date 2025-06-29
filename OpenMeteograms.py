@@ -263,7 +263,7 @@ class MeteoSfc:
                     r'$\nearrow$',    # NE
                     r'$\rightarrow$', # E
                     r'$\searrow$',    # SE
-                    r'$\downarrow$'   # S (duplicado)
+                    r'$\downarrow$'   # S (duplicate)
                 ],
                 right=False,
                 ordered=False
@@ -304,8 +304,8 @@ class MeteoSfc:
                     return 'tmax'
 
             time_periods = ['dia' if hour == 1 else 'noche' for hour in datos.is_day]
-            temperature_ranges = [get_temperature_range_index(temp) if temp is not None else None for temp in datos.temperature_2m]            
-            humidity = [int(hum/5) if hum is not None else None for hum in datos.relative_humidity_2m]
+            temperature_ranges = [get_temperature_range_index(temp) if not np.isnan(temp) else None for temp in datos.temperature_2m]            
+            humidity = [round(hum/5) if not np.isnan(hum) else None for hum in datos.relative_humidity_2m]
             hcfm_values = [tabla_hcfm[time_periods[i]][temperature_ranges[i]][humidity[i]] if temperature_ranges[i] and humidity[i] is not None else None for i in range(len(datos))]
 
             return hcfm_values
@@ -323,8 +323,8 @@ class MeteoSfc:
                 [100, 100, 90, 80, 70, 60, 50, 40, 40, 30, 30, 30, 20, 20, 20, 10]
             ]
             
-            temp = [int(t / 5) if t is not None else None for t in datos.temperature_2m]
-            hum = [hcfm - 2 if hcfm is not None else None for hcfm in datos.fuel_moisture]
+            temp = [int(t / 5) if not np.isnan(t) else None for t in datos.temperature_2m]
+            hum = [int(hcfm - 2) if not np.isnan(hcfm) else None for hcfm in datos.fuel_moisture]
             
             probig_values = []
             for t, h in zip(temp, hum):
@@ -336,7 +336,7 @@ class MeteoSfc:
                     probig_values.append(None)
             
             return probig_values
-    
+
         datos.time = pd.to_datetime(datos.time)
         datos['wind_direction_arrow'] = wind_arrows()
         datos['fuel_moisture'] = estimation_fuel_moisture()
