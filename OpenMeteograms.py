@@ -92,132 +92,6 @@ class Place:
     
 #### OPEN-METEO DATA REQUESTS ####
 
-weather_models = {
-    '': {
-        "provider": '',
-        "keyword": '',
-        "country": '',
-        "resolution": '',
-        "days": '',
-        "frequency": '',
-        "type": ''
-    },
-    "ICON": {
-        "provider": "Deutscher Wetterdienst (DWD)",
-        "keyword": "icon_seamless",
-        "country": "Germany",
-        "resolution": "2 - 11 km",
-        "days": "7.5 days",
-        "frequency": "Every 3 hours",
-        "type": "forecast"
-    },
-    "GFS": {
-        "provider": "NOAA",
-        "keyword": "gfs_seamless",
-        "country": "United States",
-        "resolution": "3 - 25 km",
-        "days": "16 days",
-        "frequency": "Every hour",
-        "type": "forecast"
-    },
-    "AROME": {
-        "provider": "MeteoFrance",
-        "keyword": "meteofrance_seamless",
-        "country": "France",
-        "resolution": "1 - 25 km",
-        "days": "4 days",
-        "frequency": "Every hour",
-        "type": "forecast"
-    },
-    "IFS": {
-        "provider": "ECMWF",
-        "keyword": "ecmwf_ifs025",
-        "country": "European Union",
-        "resolution": "25 km",
-        "days": "7 days",
-        "frequency": "Every 6 hours",
-        "type": "forecast"
-    },
-    "GSM JMA": {
-        "provider": "JMA",
-        "keyword": "jma_seamless",
-        "country": "Japan",
-        "resolution": "5 - 55 km",
-        "days": "11 days",
-        "frequency": "Every 3 hours",
-        "type": "forecast"
-    },
-    "MET Nordic": {
-        "provider": "MET Norway",
-        "keyword": "metno_nordic",
-        "country": "Norway",
-        "resolution": "1 km",
-        "days": "2.5 days",
-        "frequency": "Every hour",
-        "type": "forecast"
-    },
-    "GEM": {
-        "provider": "Canadian Weather Service",
-        "keyword": "gem_seamless",
-        "country": "Canada",
-        "resolution": "2.5 km",
-        "days": "10 days",
-        "frequency": "Every 6 hours",
-        "type": "forecast"
-    },
-    "GFS GRAPES": {
-        "provider": "China Meteorological Administration (CMA)",
-        "keyword": "cma_grapes_global",
-        "country": "China",
-        "resolution": "15 km",
-        "days": "10 days",
-        "frequency": "Every 6 hours",
-        "type": "forecast"
-    },
-    "ACCESS-G": {
-        "provider": "Australian Bureau of Meteorology (BOM)",
-        "keyword": "bom_access_global",
-        "country": "Australia",
-        "resolution": "15 km",
-        "days": "10 days",
-        "frequency": "Every 6 hours",
-        "type": "forecast"
-    },
-    "COSMO": {
-        "provider": "AM ARPAE ARPAP",
-        "keyword": "arpae_cosmo_seamless",
-        "country": "Italy",
-        "resolution": "2 km",
-        "days": "3 days",
-        "frequency": "Every 3 hours",
-        "type": "forecast"
-    },
-    "ECMWF IFS": {
-        "provider": "ECMWF",
-        "keyword": "ecmwf_ifs",
-        "country": "European Union",
-        "resolution": "9 km",
-        "days": "2017 to present",
-        "frequency": "Daily with 2 days delay",
-        "type": "archive"
-    },
-    "ERA5": {
-        "provider": "ECMWF",
-        "keyword": "era5",
-        "country": "European Union",
-        "resolution": "11 km",
-        "days": "1950 to present",
-        "frequency": "Daily with 5 days delay",
-        "type": "archive"
-    }
-}
-
-def select_models(list_model) -> list[dict]:
-    models_selected = {}
-    for modelo in list_model:
-        models_selected[modelo] = weather_models[modelo]
-    return models_selected
-
 class MeteoSfc:
     def __init__(self, location:Place, fechas:list):
         self.lat = location.lat
@@ -226,6 +100,132 @@ class MeteoSfc:
         self.tzinfo = location.tzinfo
         self.fechas = fechas
         self.datos = pd.DataFrame()
+
+        self.weather_models = {
+            '': {
+                "provider": '',
+                "keyword": '',
+                "country": '',
+                "resolution": '',
+                "days": '',
+                "frequency": '',
+                "type": ''
+            },
+            "ICON": {
+                "provider": "Deutscher Wetterdienst (DWD)",
+                "keyword": "icon_seamless",
+                "country": "Germany",
+                "resolution": "2 - 11 km",
+                "days": "7.5 days",
+                "frequency": "Every 3 hours",
+                "type": "forecast"
+            },
+            "GFS": {
+                "provider": "NOAA",
+                "keyword": "gfs_seamless",
+                "country": "United States",
+                "resolution": "3 - 25 km",
+                "days": "16 days",
+                "frequency": "Every hour",
+                "type": "forecast"
+            },
+            "AROME": {
+                "provider": "MeteoFrance",
+                "keyword": "meteofrance_seamless",
+                "country": "France",
+                "resolution": "1 - 25 km",
+                "days": "4 days",
+                "frequency": "Every hour",
+                "type": "forecast"
+            },
+            "IFS": {
+                "provider": "ECMWF",
+                "keyword": "ecmwf_ifs025",
+                "country": "European Union",
+                "resolution": "25 km",
+                "days": "7 days",
+                "frequency": "Every 6 hours",
+                "type": "forecast"
+            },
+            "GSM JMA": {
+                "provider": "JMA",
+                "keyword": "jma_seamless",
+                "country": "Japan",
+                "resolution": "5 - 55 km",
+                "days": "11 days",
+                "frequency": "Every 3 hours",
+                "type": "forecast"
+            },
+            "MET Nordic": {
+                "provider": "MET Norway",
+                "keyword": "metno_nordic",
+                "country": "Norway",
+                "resolution": "1 km",
+                "days": "2.5 days",
+                "frequency": "Every hour",
+                "type": "forecast"
+            },
+            "GEM": {
+                "provider": "Canadian Weather Service",
+                "keyword": "gem_seamless",
+                "country": "Canada",
+                "resolution": "2.5 km",
+                "days": "10 days",
+                "frequency": "Every 6 hours",
+                "type": "forecast"
+            },
+            "GFS GRAPES": {
+                "provider": "China Meteorological Administration (CMA)",
+                "keyword": "cma_grapes_global",
+                "country": "China",
+                "resolution": "15 km",
+                "days": "10 days",
+                "frequency": "Every 6 hours",
+                "type": "forecast"
+            },
+            "ACCESS-G": {
+                "provider": "Australian Bureau of Meteorology (BOM)",
+                "keyword": "bom_access_global",
+                "country": "Australia",
+                "resolution": "15 km",
+                "days": "10 days",
+                "frequency": "Every 6 hours",
+                "type": "forecast"
+            },
+            "COSMO": {
+                "provider": "AM ARPAE ARPAP",
+                "keyword": "arpae_cosmo_seamless",
+                "country": "Italy",
+                "resolution": "2 km",
+                "days": "3 days",
+                "frequency": "Every 3 hours",
+                "type": "forecast"
+            },
+            "ECMWF IFS": {
+                "provider": "ECMWF",
+                "keyword": "ecmwf_ifs",
+                "country": "European Union",
+                "resolution": "9 km",
+                "days": "2017 to present",
+                "frequency": "Daily with 2 days delay",
+                "type": "archive"
+            },
+            "ERA5": {
+                "provider": "ECMWF",
+                "keyword": "era5",
+                "country": "European Union",
+                "resolution": "11 km",
+                "days": "1950 to present",
+                "frequency": "Daily with 5 days delay",
+                "type": "archive"
+            }
+        }
+
+    def select_models(self, list_model) -> list[dict]:
+        models_selected = {}
+        for modelo in list_model:
+            models_selected[modelo] = self.weather_models[modelo]
+        return models_selected
 
     def openmeteo_request(self, fechas:list, modelo:dict):
         variables = ['temperature_2m','relative_humidity_2m','dew_point_2m',
@@ -248,7 +248,7 @@ class MeteoSfc:
             return None
         return response.json()
 
-    def transform_data(self, datos:pd.DataFrame):
+    def transform_data(self, datos:pd.DataFrame) -> pd.DataFrame:
         def wind_arrows():
             cut_arrows = pd.cut(
                 datos['wind_direction_10m'] % 360,
@@ -343,7 +343,8 @@ class MeteoSfc:
 
         return datos
     
-    def get_data_models(self, modelos:dict[str, dict]) -> pd.DataFrame:
+    def get_data_models(self, models:list) -> pd.DataFrame:
+        modelos = self.select_models(models)
         for model_name, model_data in modelos.items():
             openmeteo_data = self.openmeteo_request(self.fechas, model_data)
             df = self.transform_data(pd.DataFrame(openmeteo_data['hourly']))
@@ -354,95 +355,121 @@ class MeteoSfc:
     def get_data_years(self, years:list) -> pd.DataFrame:
         year_now, month_init, day_init = self.fechas[0].split('-')
         year_now, month_end, day_end = self.fechas[1].split('-')
+
         for year in years:
             fechas = ['-'.join([str(year),month_init, day_init]), '-'.join([str(year),month_end, day_end])]
-            openmeteo_data = self.openmeteo_request(fechas, weather_models['ERA5'])
+
+            openmeteo_data = self.openmeteo_request(fechas, self.weather_models['ERA5'])
             df = self.transform_data(pd.DataFrame(openmeteo_data['hourly']))
-            df['year'] = year
+            df['model'] = str(year)
+
+            delta = int(year_now) - year
+            df.time = df.time.apply(lambda x: x.replace(year = x.year + delta))
+
             self.datos = pd.concat([self.datos, df],ignore_index=True)
-        self.datos['year'] = self.datos['year'].fillna(year_now)
         return self.datos
 
-#### METEOGRAMS PLOTS ####
+    def meteoplot(self, fechas:list[str], models:list[str] = []) -> plt.Figure:
+        colores = {
+                    'green': ['darkolivegreen', 'green', 'springgreen', 'yellowgreen'],
+                    'yellow': ['orange', 'gold', 'darkgoldenrod', 'yellow'],
+                    'red': ['red', 'darkred', 'salmon', 'crimson'],
+                    'grey': ['black', 'gray', 'lightgray', 'silver'],
+                    'blue': ['navy', 'darkcyan', 'deepskyblue', 'paleturquoise']
+                }
 
-class MeteoPlot:
-    def __init__(self, sfc_data:dict[str, dict], fechas:list):
-        inicio = sfc_data.time.dt.strftime('%Y-%m-%d') >= fechas[0]
-        final = sfc_data.time.dt.strftime('%Y-%m-%d') <= fechas[1]
+        # FILTER DATA #
 
-        self.datos = sfc_data.loc[(inicio) & (final)]
-        self.fechas = [self.format_fecha(fecha, format = '%d-%b') for fecha in fechas]
-        self.meteoplot()
+        init_date =  pd.to_datetime(fechas[0])
+        end_date = pd.to_datetime(fechas[1])
+        datos = self.datos.loc[(self.datos.time >= init_date) & (self.datos.time <= end_date)]
 
-    def format_fecha(self, fecha:str, format:str):
-        year, month, day = map(int, fecha.split('-'))
-        fecha = dt.datetime(year, month, day).strftime(format)
-        return fecha
+        if len(models) > 0:
+            datos = datos[datos['model'].isin(models)]
+        
+        ref_model = models[0] if models else datos.model.unique()[0]
+        datos_ref = datos[datos.model == ref_model]
 
-    def meteoplot(self) -> plt.Figure:
-            colores = {
-                        'green': ['darkolivegreen', 'green', 'springgreen', 'yellowgreen'],
-                        'yellow': ['orange', 'gold', 'darkgoldenrod', 'yellow'],
-                        'red': ['red', 'darkred', 'salmon', 'crimson'],
-                        'grey': ['black', 'gray', 'lightgray', 'silver'],
-                        'blue': ['navy', 'darkcyan', 'deepskyblue', 'paleturquoise']
-                    }
+        # ORDER PLOTS #
 
-            fig, ax = plt.subplots(3,1,figsize=(15,10), sharex=True)
-            ax1 = ax[1].twinx()
-            ax2 = ax[2].twinx()
+        total_rows = 4
+        index = iter(range(total_rows))
 
-            for model, index in zip(self.datos.model.unique(), range(0, len(colores))):
-                datos = self.datos[self.datos.model == model]
+        wdir = next(index)
+        wind = next(index)
+        temp = next(index)
+        fuel = next(index)
 
-                sns.lineplot(datos, x='time', y='wind_speed_10m', color=colores['green'][index], ax=ax[0])
-                sns.lineplot(datos, x='time', y='wind_gusts_10m', color=colores['yellow'][index], linestyle='--', ax=ax[0])
-                for i, row in datos.iterrows():
-                    ax[0].text(row['time'], self.datos.wind_gusts_10m.max() + index*3, row['wind_direction_arrow'], 
-                            fontsize=18, ha='center', va='bottom', color=colores['grey'][index])
-                    
-                sns.lineplot(datos, x='time', y='temperature_2m', color=colores['red'][index], ax=ax[1])
-                sns.lineplot(datos, x='time', y='dew_point_2m', color=colores['grey'][index], linestyle='--', ax=ax[1])
-                sns.lineplot(datos, x='time', y='relative_humidity_2m', color=colores['blue'][index], ax=ax1)
+        # PLOT SETUP #
 
-                sns.lineplot(datos, x='time', y='fuel_moisture', color=colores['red'][index], ax=ax[2])
-                sns.lineplot(datos, x='time', y='prob_ignition', color=colores['yellow'][index], ax=ax2)
-                    
-            ax[0].fill_between(datos.time, 0, self.datos.wind_gusts_10m.max() + 10, where=datos.is_day == 0, alpha=0.3, color='lightblue')
-            ax[0].set_ylim(0, self.datos.wind_gusts_10m.max() + 15)
-            ax[0].set_ylabel('Wind speed and gusts (km/h)')
+        fig, ax = plt.subplots(total_rows,1,figsize=(10,10), sharex=True)
+        ax1 = ax[temp].twinx()
+        ax2 = ax[fuel].twinx()
 
-            ax1.fill_between(datos.time, 0,100, where=datos.is_day == 0, alpha=0.3, color='lightblue')
-            ax[1].set_ylim(-5,45)
-            ax[1].set_yticks(range(-5,45,5))
-            ax[1].set_yticklabels(range(-5,45,5))
-            ax[1].set_ylabel('Temperature and dewpoint (ºC)')
-            ax[1].grid()
+        for eje in [ax1, ax2]:
+            eje.set_ylim(0,100)
+            eje.set_yticks(range(0,100,10))
+            eje.set_yticklabels(range(0,100,10))
 
-            ax1.set_ylim(0,100)
-            ax1.set_yticks(range(0,100,10))
-            ax1.set_yticklabels(range(0,100,10))
-            ax1.set_ylabel('Humidity relative (%)')
+        for eje in [ax[wdir], ax[wind], ax1, ax2]:
+            eje.fill_between(datos_ref.time, 0,100, where=datos_ref.is_day == 0, alpha=0.3, color='lightblue')
 
-            ax2.fill_between(datos.time, 0,100, where=datos.is_day == 0, alpha=0.3, color='lightblue')
-            ax[2].set_ylim(0,25)
-            ax[2].set_yticks(range(0,25,5))
-            ax[2].set_yticklabels(range(0,25,5))
-            ax[2].set_ylabel('Fuel moisture (%)')
-            ax[2].grid()
+        ticks = pd.date_range(start=init_date, end=end_date, freq='1D')
+        ax[total_rows -1].set_xticks(ticks)
+        ax[total_rows -1].set_xticklabels(ticks.strftime('%b-%d'))
+        ax[total_rows -1].set_xlabel('Source: Open-Meteo.com Weather API')
 
-            ax2.set_ylim(0,100)
-            ax2.set_yticks(range(0,100,10))
-            ax2.set_yticklabels(range(0,100,10))
-            ax2.set_ylabel('Probability of ignition (%)')
-            
-            ax[2].set_xticks(datos.time.dt.date.unique())
-            ax[2].set_xticklabels(datos.time.dt.strftime('%d-%b').unique())
-            ax[2].set_xlabel('Source: Open-Meteo.com Weather API')
+        # PLOTS #
 
-            fig.suptitle(f'Meteogram {', '.join(self.datos.model.unique())} | {self.fechas[0]} - {self.fechas[1]}',
-                        fontsize=12, 
-                        fontweight='bold')
-            fig.tight_layout()
+        # Wind direction
+        for index, model in enumerate(datos.model.unique()):
+            datos_model = datos.loc[datos.model == model]
 
-            return fig
+            for i, row in datos_model.iterrows():
+                ax[wdir].text(row['time'], index + 1, row['wind_direction_arrow'],
+                fontsize=18, ha='center', va='center', color=colores['grey'][index])
+        ax[wdir].set_ylim(0, index +2)
+        ax[wdir].set_yticks(range(index + 2))
+        ax[wdir].set_yticklabels([' '] + models)
+        
+        # Wind speed
+        sns.lineplot(datos, x='time', y='wind_speed_10m', hue='model', palette=colores['green'], ax=ax[wind], legend=False)
+        sns.lineplot(datos, x='time', y='wind_gusts_10m', hue='model', palette=colores['yellow'], linestyle='--', ax=ax[wind])
+        ax[wind].set_ylabel('Wind speed and gusts (km/h)')
+        ax[wind].grid()
+        ax[wind].legend(loc='lower right')
+
+        # Temperature and relative humidity
+        sns.lineplot(datos, x='time', y='temperature_2m', hue='model', palette=colores['red'], ax=ax[temp], legend=False)
+        sns.lineplot(datos, x='time', y='dew_point_2m', hue='model', palette=colores['grey'], linestyle='--', ax=ax[temp], legend=False)
+        sns.lineplot(datos, x='time', y='relative_humidity_2m', hue='model', palette=colores['blue'], ax=ax1)
+        ax[temp].set_ylabel('Temperature and dewpoint (ºC)')
+        ax1.set_ylabel('Humidity relative (%)')
+        ax1.legend(loc='lower right')
+
+        ax[temp].set_ylim(-5,45)
+        ax[temp].set_yticks(range(-5,45,5))
+        ax[temp].set_yticklabels(range(-5,45,5))
+        ax[temp].grid()
+
+        # Fuel moisture
+        sns.lineplot(datos, x='time', y='fuel_moisture', hue='model', palette=colores['red'], ax=ax[fuel])
+        sns.lineplot(datos, x='time', y='prob_ignition', hue='model', palette=colores['yellow'], ax=ax2, legend=False)
+        ax[fuel].set_ylabel('Fuel moisture (%)')
+        ax2.set_ylabel('Probability of ignition (%)')
+        
+        ax[fuel].set_ylim(0,25)
+        ax[fuel].set_yticks(range(0,25,5))
+        ax[fuel].set_yticklabels(range(0,25,5))
+        ax[fuel].grid()
+        ax[fuel].legend(loc='lower right')
+
+        # TITLE #
+
+        fig.suptitle(f'Meteogram {', '.join(datos.model.unique())} | {fechas[0]} - {fechas[1]}',
+                    fontsize=12, 
+                    fontweight='bold')
+        fig.tight_layout()
+        fig.subplots_adjust(hspace=0.10)
+
+        return fig
