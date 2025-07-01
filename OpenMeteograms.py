@@ -369,7 +369,7 @@ class MeteoSfc:
             self.datos = pd.concat([self.datos, df],ignore_index=True)
         return self.datos
 
-    def meteoplot(self, fechas:list[str], models:list[str] = []) -> plt.Figure:
+    def meteoplot(self, fechas:list[str] = [], models:list[str] = []) -> plt.Figure:
         colores = {
                     'green': ['darkolivegreen', 'green', 'springgreen', 'yellowgreen'],
                     'yellow': ['orange', 'gold', 'darkgoldenrod', 'yellow'],
@@ -380,9 +380,12 @@ class MeteoSfc:
 
         # FILTER DATA #
 
-        init_date =  pd.to_datetime(fechas[0])
-        end_date = pd.to_datetime(fechas[1])
-        datos = self.datos.loc[(self.datos.time >= init_date) & (self.datos.time <= end_date)]
+        if len(fechas) > 0:
+            init_date =  pd.to_datetime(fechas[0])
+            end_date = pd.to_datetime(fechas[1])
+            datos = self.datos.loc[(self.datos.time >= init_date) & (self.datos.time <= end_date)]
+        else:
+            fechas = self.fechas
 
         if len(models) > 0:
             datos = datos[datos['model'].isin(models)]
@@ -466,6 +469,8 @@ class MeteoSfc:
         ax[fuel].legend(loc='upper right')
 
         # TITLE #
+        for index, fecha in enumerate(fechas):
+            fechas[index] = pd.Timestamp(fecha).strftime('%d-%b')
 
         fig.suptitle(f'Meteogram {', '.join(datos.model.unique())} | {fechas[0]} - {fechas[1]}',
                     fontsize=12, 
