@@ -428,9 +428,9 @@ class MeteoSfc:
             for i, row in datos_model.iterrows():
                 ax[wdir].text(row['time'], index + 1, row['wind_direction_arrow'],
                 fontsize=18, ha='center', va='center', color=colores['grey'][index])
-        ax[wdir].set_ylim(0, index +2)
-        ax[wdir].set_yticks(range(index + 2))
-        ax[wdir].set_yticklabels([' '] + models)
+        ax[wdir].set_ylim(0, len(models) +2 )
+        ax[wdir].set_yticks(range(len(models) +2))
+        ax[wdir].set_yticklabels([' '] + models + [' '])
         
         # Wind speed
         sns.lineplot(datos, x='time', y='wind_speed_10m', hue='model', palette=colores['green'], ax=ax[wind], legend=False)
