@@ -386,9 +386,10 @@ class MeteoSfc:
 
         if len(models) > 0:
             datos = datos[datos['model'].isin(models)]
+        else:
+            models = datos.model.unique()
         
-        ref_model = models[0] if models else datos.model.unique()[0]
-        datos_ref = datos[datos.model == ref_model]
+        datos_ref = datos[datos.model == models[0]]
 
         # ORDER PLOTS #
 
@@ -422,22 +423,22 @@ class MeteoSfc:
         # PLOTS #
 
         # Wind direction
-        for index, model in enumerate(datos.model.unique()):
+        for index, model in enumerate(models):
             datos_model = datos.loc[datos.model == model]
 
             for i, row in datos_model.iterrows():
                 ax[wdir].text(row['time'], index + 1, row['wind_direction_arrow'],
                 fontsize=18, ha='center', va='center', color=colores['grey'][index])
-        ax[wdir].set_ylim(0, len(models) +2 )
-        ax[wdir].set_yticks(range(len(models) +2))
-        ax[wdir].set_yticklabels([' '] + models + [' '])
+        ax[wdir].set_ylim(0, len(models) +1)
+        ax[wdir].set_yticks(range(1, len(models) +1))
+        ax[wdir].set_yticklabels(models)
         
         # Wind speed
         sns.lineplot(datos, x='time', y='wind_speed_10m', hue='model', palette=colores['green'], ax=ax[wind], legend=False)
         sns.lineplot(datos, x='time', y='wind_gusts_10m', hue='model', palette=colores['yellow'], linestyle='--', ax=ax[wind])
         ax[wind].set_ylabel('Wind speed and gusts (km/h)')
         ax[wind].grid()
-        ax[wind].legend(loc='lower right')
+        ax[wind].legend(loc='upper right')
 
         # Temperature and relative humidity
         sns.lineplot(datos, x='time', y='temperature_2m', hue='model', palette=colores['red'], ax=ax[temp], legend=False)
@@ -445,7 +446,7 @@ class MeteoSfc:
         sns.lineplot(datos, x='time', y='relative_humidity_2m', hue='model', palette=colores['blue'], ax=ax1)
         ax[temp].set_ylabel('Temperature and dewpoint (ºC)')
         ax1.set_ylabel('Humidity relative (%)')
-        ax1.legend(loc='lower right')
+        ax1.legend(loc='upper right')
 
         ax[temp].set_ylim(-5,45)
         ax[temp].set_yticks(range(-5,45,5))
@@ -462,7 +463,7 @@ class MeteoSfc:
         ax[fuel].set_yticks(range(0,25,5))
         ax[fuel].set_yticklabels(range(0,25,5))
         ax[fuel].grid()
-        ax[fuel].legend(loc='lower right')
+        ax[fuel].legend(loc='upper right')
 
         # TITLE #
 
