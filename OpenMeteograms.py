@@ -94,6 +94,7 @@ class Place:
 
 class MeteoSfc:
     def __init__(self, location:Place, fechas:list):
+        self.name = location.name
         self.lat = location.lat
         self.lon = location.lon
         self.elev = location.elev
@@ -370,32 +371,33 @@ class MeteoSfc:
         return self.datos
 
     def meteoplot(self, fechas:list[str] = [], models:list[str] = []) -> plt.Figure:
-        colores = {
-                    'green': ['darkolivegreen', 'green', 'springgreen', 'yellowgreen'],
-                    'yellow': ['orange', 'gold', 'darkgoldenrod', 'yellow'],
-                    'red': ['red', 'darkred', 'salmon', 'crimson'],
-                    'grey': ['black', 'gray', 'lightgray', 'silver'],
-                    'blue': ['navy', 'darkcyan', 'deepskyblue', 'paleturquoise']
-                }
+        # PALETTES #
+        def get_partial_palette(cmap_name:str, start:float, stop:float, n_colors:int):
+            cmap = plt.get_cmap(cmap_name)
+            colors = [cmap(x) for x in np.linspace(start, stop, n_colors)]
+            return colors
 
-        # FILTER DATA #
+        colors = {
+            'reds':    get_partial_palette('Reds_r',    0.1, 0.7, len(models)),
+            'yellows': get_partial_palette('Wistia_r',  0.1, 0.7, len(models)),
+            'greens':  get_partial_palette('Greens_r',  0.1, 0.7, len(models)),
+            'blues':   get_partial_palette('Blues_r',   0.1, 0.7, len(models)),
+            'greys':   get_partial_palette('Greys_r',   0.1, 0.7, len(models))
+        }        
 
-        if len(fechas) > 0:
-            init_date =  pd.to_datetime(fechas[0])
-            end_date = pd.to_datetime(fechas[1])
+        # FILTER DATA - fechas & models #
+        def filter_data():            # return init_date, end_date, datos, models
+            fechas_local = fechas if fechas else self.fechas
+            init_date =  pd.to_datetime(fechas_local[0])
+            end_date = pd.to_datetime(fechas_local[1])
             datos = self.datos.loc[(self.datos.time >= init_date) & (self.datos.time <= end_date)]
-        else:
-            fechas = self.fechas
 
-        if len(models) > 0:
-            datos = datos[datos['model'].isin(models)]
-        else:
-            models = datos.model.unique()
-        
-        datos_ref = datos[datos.model == models[0]]
+            models_local = models if models else datos.model.unique()
+            datos = datos[datos['model'].isin(models)]  
+            
+            return init_date, end_date, datos, models_local
 
         # ORDER PLOTS #
-
         total_rows = 4
         index = iter(range(total_rows))
 
@@ -405,74 +407,131 @@ class MeteoSfc:
         fuel = next(index)
 
         # PLOT SETUP #
-
+        init_date, end_date, datos, models = filter_data()
         fig, ax = plt.subplots(total_rows,1,figsize=(10,10), sharex=True)
+        ax0 = ax[wind].twinx()
         ax1 = ax[temp].twinx()
         ax2 = ax[fuel].twinx()
-
-        for eje in [ax1, ax2]:
-            eje.set_ylim(0,100)
-            eje.set_yticks(range(0,100,10))
-            eje.set_yticklabels(range(0,100,10))
-
-        for eje in [ax[wdir], ax[wind], ax1, ax2]:
-            eje.fill_between(datos_ref.time, 0,100, where=datos_ref.is_day == 0, alpha=0.3, color='lightblue')
 
         ticks = pd.date_range(start=init_date, end=end_date, freq='1D')
         ax[total_rows -1].set_xticks(ticks)
         ax[total_rows -1].set_xticklabels(ticks.strftime('%b-%d'))
         ax[total_rows -1].set_xlabel('Source: Open-Meteo.com Weather API')
+        
+        # FEATURES SETTINGS #
+        plot_settings = {
+            'wind_speed_10m':       {'palette': colors['greens'],   'color': colors['greens'][0],   'style': '-',   'label': 'Wind Speed'},
+            'wind_gusts_10m':       {'palette': colors['yellows'],  'color': colors['yellows'][0],  'style': '--',  'label': 'Wind Gusts'},
+            'temperature_2m':       {'palette': colors['reds'],     'color': colors['reds'][0],     'style': '-',   'label': 'Temperature'},
+            'dew_point_2m':         {'palette': colors['greys'],    'color': colors['greys'][0],    'style': '--',  'label': 'Dew Point'},
+            'relative_humidity_2m': {'palette': colors['blues'],    'color': colors['blues'][0],    'style': '-',   'label': 'Relative Humidity'},
+            'fuel_moisture':        {'palette': colors['reds'],     'color': colors['reds'][0],     'style': '-',   'label': 'Fuel moisture'},
+            'prob_ignition':        {'palette': colors['yellows'],  'color': colors['yellows'][0],  'style': '-',   'label': 'Ignition Probability'}
+        }
+        
+        features_and_axes = [
+            ('wind_speed_10m', ax[wind]),
+            ('wind_gusts_10m', ax0),
+            ('temperature_2m', ax[temp]),
+            ('dew_point_2m', ax[temp]),
+            ('relative_humidity_2m', ax1),
+            ('fuel_moisture', ax[fuel]),
+            ('prob_ignition', ax2)
+        ]
+
+        axis_settings = {
+            ax[wind]: {
+                'ylabel': 'Wind speed (km/h)',
+                'legend_loc': 'lower left',
+                'ylim': None,
+                'yticks': None,
+                'grid': True
+            },
+            ax0: {
+                'ylabel': 'Wind gusts (km/h)',
+                'legend_loc': 'lower right',
+                'ylim': None,
+                'yticks': None,
+                'grid': False
+            },
+            ax[temp]: {
+                'ylabel': 'Temperature and dewpoint (ºC)',
+                'legend_loc': 'lower left',
+                'ylim': (-5, 45),
+                'yticks': list(range(-5, 45, 5)),
+                'grid': True
+            },
+            ax1: {
+                'ylabel': 'Humidity relative (%)',
+                'legend_loc': 'lower right',
+                'ylim': (0, 100),
+                'yticks': list(range(0, 100, 10)),
+                'grid': None
+            },
+            ax[fuel]: {
+                'ylabel': 'Fuel moisture (%)',
+                'legend_loc': 'lower left',
+                'ylim': (0, 25),
+                'yticks': list(range(0, 25, 5)),
+                'grid': True
+            },
+            ax2: {
+                'ylabel': 'Probability of ignition (%)',
+                'legend_loc': 'lower right',
+                'ylim': (0, 100),
+                'yticks': list(range(0, 100, 10)),
+                'grid': None
+            }
+        }
+
+        def lineplots(n_models: int):
+            for feature_name, axis in features_and_axes:
+                settings = plot_settings[feature_name]
+
+                if n_models == 1:
+                    sns.lineplot(data=datos, x='time', y=feature_name, ax=axis,
+                                color=settings['color'] ,linestyle=settings['style'] ,label=settings['label'], zorder=5)
+                else:
+                    sns.lineplot(data=datos, x='time', y=feature_name, ax=axis,
+                                hue='model', palette=settings['palette'], linestyle=settings['style'], zorder=5)
+                if axis in axis_settings:
+                    axis.fill_between(datos_ref.time, 0,100, where=datos_ref.is_day == 0, alpha=0.1, color='lightblue', zorder=0)
+                    cfg = axis_settings[axis]
+
+                    if cfg.get('ylabel'): axis.set_ylabel(cfg['ylabel'])
+                    if cfg.get('ylim'): axis.set_ylim(*cfg['ylim'])
+                    if cfg.get('yticks'): axis.set_yticks(cfg['yticks'])
+                    if cfg.get('grid'): axis.grid(cfg['grid'])
+                    if n_models == 1:
+                        if cfg.get('legend_loc'): axis.legend(loc=cfg['legend_loc']).set_zorder(10)
+                    elif n_models > 1 and axis in [ax0, ax1, ax2]:
+                        axis.legend(loc='lower right').set_zorder(10)
+                    else:
+                        if axis.get_legend():
+                            axis.get_legend().remove()
 
         # PLOTS #
-
         # Wind direction
         for index, model in enumerate(models):
             datos_model = datos.loc[datos.model == model]
 
             for i, row in datos_model.iterrows():
                 ax[wdir].text(row['time'], index + 1, row['wind_direction_arrow'],
-                fontsize=18, ha='center', va='center', color=colores['grey'][index])
+                fontsize=18, ha='center', va='center', color='k', zorder=5)
+        datos_ref = datos[datos.model == models[0]]
+        ax[wdir].fill_between(datos_ref.time, 0,100, where=datos_ref.is_day == 0, alpha=0.2, color='lightblue', zorder=0)
         ax[wdir].set_ylim(0, len(models) +1)
         ax[wdir].set_yticks(range(1, len(models) +1))
         ax[wdir].set_yticklabels(models)
-        
-        # Wind speed
-        sns.lineplot(datos, x='time', y='wind_speed_10m', hue='model', palette=colores['green'], ax=ax[wind], legend=False)
-        sns.lineplot(datos, x='time', y='wind_gusts_10m', hue='model', palette=colores['yellow'], linestyle='--', ax=ax[wind])
-        ax[wind].set_ylabel('Wind speed and gusts (km/h)')
-        ax[wind].grid()
-        ax[wind].legend(loc='upper right')
 
-        # Temperature and relative humidity
-        sns.lineplot(datos, x='time', y='temperature_2m', hue='model', palette=colores['red'], ax=ax[temp], legend=False)
-        sns.lineplot(datos, x='time', y='dew_point_2m', hue='model', palette=colores['grey'], linestyle='--', ax=ax[temp], legend=False)
-        sns.lineplot(datos, x='time', y='relative_humidity_2m', hue='model', palette=colores['blue'], ax=ax1)
-        ax[temp].set_ylabel('Temperature and dewpoint (ºC)')
-        ax1.set_ylabel('Humidity relative (%)')
-        ax1.legend(loc='upper right')
-
-        ax[temp].set_ylim(-5,45)
-        ax[temp].set_yticks(range(-5,45,5))
-        ax[temp].set_yticklabels(range(-5,45,5))
-        ax[temp].grid()
-
-        # Fuel moisture
-        sns.lineplot(datos, x='time', y='fuel_moisture', hue='model', palette=colores['red'], ax=ax[fuel])
-        sns.lineplot(datos, x='time', y='prob_ignition', hue='model', palette=colores['yellow'], ax=ax2, legend=False)
-        ax[fuel].set_ylabel('Fuel moisture (%)')
-        ax2.set_ylabel('Probability of ignition (%)')
-        
-        ax[fuel].set_ylim(0,25)
-        ax[fuel].set_yticks(range(0,25,5))
-        ax[fuel].set_yticklabels(range(0,25,5))
-        ax[fuel].grid()
-        ax[fuel].legend(loc='upper right')
+        # Others plots
+        lineplots(n_models=len(models))
 
         # TITLE #
         for index, fecha in enumerate(fechas):
             fechas[index] = pd.Timestamp(fecha).strftime('%d-%b')
 
-        fig.suptitle(f'Meteogram {', '.join(datos.model.unique())} | {fechas[0]} - {fechas[1]}',
+        fig.suptitle(f'Meteogram {self.name} | Lat: {round(self.lat, 4)} Lon: {round(self.lon, 4)}',
                     fontsize=12, 
                     fontweight='bold')
         fig.tight_layout()
