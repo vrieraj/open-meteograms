@@ -393,9 +393,21 @@ class MeteoSfc:
             datos = self.datos.loc[(self.datos.time >= init_date) & (self.datos.time <= end_date)]
 
             models_local = models if models else datos.model.unique()
-            datos = datos[datos['model'].isin(models)]  
+            datos = datos[datos['model'].isin(models_local)]
+
+            # Validation
+            if datos.empty:
+                raise ValueError(
+                    f'Dates out of range: {init_date.date()} | {end_date.date()} '
+                )
             
-            return init_date, end_date, datos, models_local
+            invalid_models = set(models_local) - set(datos.model.unique())
+            if invalid_models:
+                raise ValueError(
+                    f'Unknown models: {invalid_models}'
+                )
+            
+            return init_date, end_date, datos, datos.model.unique()
 
         # ORDER PLOTS #
         total_rows = 4
