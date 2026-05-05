@@ -5,3 +5,7 @@ pytz==2025.2
 requests==2.32.4
 seaborn==0.13.2
 timezonefinder==7.0.1
+streamlit>=1.31.0
+folium>=0.14.0
+streamlit-folium>=0.18.0
+streamlit-searchbox>=0.1.11
