@@ -528,7 +528,7 @@ class MeteoSfc:
                         row['wind_direction_arrow'],
                         fontsize=18, ha='center', va='center', color='k', zorder=5)
         ax.grid(True, axis='x', alpha=0.3)
-        ax.xaxis.grid(True, which='minor', axis='x', alpha=0.15, linestyle=':')
+        ax.xaxis.grid(True, which='minor', alpha=0.15, linestyle=':')
         ax.set_ylim(0, len(source_list) + 1)
         ax.set_yticks(range(1, len(source_list) + 1))
         y_labels = [
