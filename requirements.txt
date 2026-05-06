@@ -10,3 +10,4 @@ folium>=0.14.0
 streamlit-folium>=0.18.0
 streamlit-searchbox>=0.1.11
 python-dotenv>=1.0
+openpyxl>=3.1

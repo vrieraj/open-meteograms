@@ -1,7 +1,10 @@
 """Streamlit viewer — Open Meteograms."""
 
 import calendar
+import io
 import os
+from collections import Counter
+from dataclasses import dataclass, field
 import requests
 from dotenv import load_dotenv
 load_dotenv()
@@ -39,6 +42,9 @@ _DEFAULTS = {
     "wx_selected": set(),    # set of stationId strings
     "wu_api_key": os.environ.get("WU_API_KEY", ""),
     "wx_radius_km": 50,
+    # excel download
+    "excel_bytes": None,
+    "excel_key": None,
 }
 for k, v in _DEFAULTS.items():
     st.session_state.setdefault(k, v)
@@ -119,6 +125,64 @@ def _build_map(center, zoom, basemap, place=None,
             popup=folium.Popup(_station_popup(s), max_width=240),
         ).add_to(m)
     return m
+
+
+# ── STATION HELPERS ───────────────────────────────────────────
+def _station_labels(stations: list[dict]) -> dict[str, str]:
+    """stationId → display label (name or ID, with 01/02 index for duplicates)."""
+    raw = {s["stationId"]: (s.get("name") or "").strip() or s["stationId"]
+           for s in stations}
+    counts = Counter(raw.values())
+    seen: dict[str, int] = {}
+    result: dict[str, str] = {}
+    for sid, label in raw.items():
+        if counts[label] > 1:
+            seen[label] = seen.get(label, 0) + 1
+            result[sid] = f"{label} {seen[label]:02d}"
+        else:
+            result[sid] = label
+    return result
+
+
+@dataclass
+class _PlaceLike:
+    """Minimal Place substitute for functions that need place attributes."""
+    name: str
+    lat: float
+    lon: float
+    elev: float
+    tzinfo: str
+    properties: dict = field(default_factory=dict)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _build_excel_bytes(name, lat, lon, elev, tzinfo_str,
+                        fechas, models_t, wx_sel_t, wu_key, labels_t):
+    """Fetch all selected data and return an Excel workbook as bytes."""
+    import pandas as pd
+    place = _PlaceLike(name=name, lat=lat, lon=lon, elev=elev, tzinfo=tzinfo_str)
+    sfc = MeteoSfc(place, list(fechas))
+    if models_t:
+        sfc.get_data("openmeteo", models=list(models_t))
+    labels = dict(labels_t)
+    for sid in wx_sel_t:
+        df = fetch_wu_hourly(sid, fechas[0], fechas[1], wu_key)
+        if df is not None and not df.empty:
+            sfc.get_data_station(df, label=labels.get(sid, sid))
+
+    buf = io.BytesIO()
+    col_order = ["time", "temperature_2m", "dew_point_2m", "relative_humidity_2m",
+                 "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
+                 "vapour_pressure_deficit", "fuel_moisture", "fuel_moisture_vpd",
+                 "prob_ignition"]
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for src in sfc.datos["source"].unique():
+            label = sfc.station_names.get(src, src)
+            sheet = label[:31]  # Excel sheet name limit
+            df_src = sfc.datos[sfc.datos["source"] == src].copy()
+            cols = [c for c in col_order if c in df_src.columns]
+            df_src[cols].to_excel(writer, sheet_name=sheet, index=False)
+    return buf.getvalue()
 
 
 # ── WEATHER STATIONS ──────────────────────────────────────────
@@ -287,7 +351,19 @@ if _click:
     _coords = (round(_click["lat"], 5), round(_click["lng"], 5))
     if _coords != st.session_state.last_click:
         st.session_state.last_click = _coords
-        st.session_state.event = {"type": "map", "coords": _coords}
+        # Station click: toggle selection instead of geocoding
+        _hit = next(
+            (s["stationId"] for s in st.session_state.wx_stations
+             if abs(s["lat"] - _coords[0]) < 0.001
+             and abs(s["lon"] - _coords[1]) < 0.001),
+            None,
+        )
+        if _hit:
+            _sel = set(st.session_state.wx_selected)
+            _sel.discard(_hit) if _hit in _sel else _sel.add(_hit)
+            st.session_state.wx_selected = _sel
+        else:
+            st.session_state.event = {"type": "map", "coords": _coords}
         st.rerun()
 
 
@@ -316,13 +392,14 @@ def _dialog():
         wx_selected = st.session_state.get("wx_selected", set())
         wu_key      = st.session_state.get("wu_api_key", "").strip()
         if wx_selected and wu_key:
+            _lbl_map = _station_labels(st.session_state.get("wx_stations", []))
             for sid in wx_selected:
-                with st.spinner(f"Downloading station {sid}…"):
+                with st.spinner(f"Downloading station {_lbl_map.get(sid, sid)}…"):
                     df = fetch_wu_hourly(sid, fechas[0], fechas[1], wu_key)
                 if df is not None and not df.empty:
-                    sfc.get_data_station(df)
+                    sfc.get_data_station(df, label=_lbl_map.get(sid, sid))
                 else:
-                    st.warning(f"⚠ No data for station {sid} in this date range.")
+                    st.warning(f"⚠ No data for {_lbl_map.get(sid, sid)} in this date range.")
 
         with st.spinner("Rendering…"):
             fig = sfc.meteoplot(vrt=vrt)
@@ -486,27 +563,20 @@ with st.sidebar:
 
             stations = st.session_state.wx_stations
             if stations:
+                labels = _station_labels(stations)
                 st.caption(f"{len(stations)} stations found")
                 st.divider()
                 new_selected = set(st.session_state.wx_selected)
                 for s in stations:
-                    sid  = s["stationId"]
-                    name = s.get("name") or sid
-                    loc  = " · ".join(filter(None, [s.get("adm1"), s.get("country")]))
-                    elev = f"  ⛰ {s['elev_m']} m" if s.get("elev_m") is not None else ""
-                    label_md = f"**{sid}**  {name}"
-                    chips = []
-                    if s.get("temp_c")        is not None: chips.append(f"🌡 {s['temp_c']}°C")
-                    if s.get("humidity_pct")  is not None: chips.append(f"💧 {s['humidity_pct']}%")
-                    if s.get("windspeed_kmh") is not None: chips.append(f"💨 {s['windspeed_kmh']} km/h")
+                    sid   = s["stationId"]
+                    label = labels[sid]
+                    loc   = " · ".join(filter(None, [s.get("adm1"), s.get("country")]))
+                    elev  = f"  ⛰ {s['elev_m']} m" if s.get("elev_m") is not None else ""
                     col_cb, col_info = st.columns([1, 5])
                     checked = col_cb.checkbox("", value=sid in new_selected,
                                               key=f"wx_cb_{sid}")
-                    col_info.markdown(label_md)
-                    if loc or elev:
-                        col_info.caption(f"{loc}{elev}")
-                    if chips:
-                        col_info.caption("  ".join(chips))
+                    col_info.markdown(f"**{label}**")
+                    col_info.caption(f"`{sid}`  {loc}{elev}")
                     if checked:
                         new_selected.add(sid)
                     else:
@@ -517,15 +587,54 @@ with st.sidebar:
 
         # ── GENERATE ──────────────────────────────────────────
         st.divider()
+        _can_run = bool(selected_models) and valid_dates
         if st.button(
             "⚡ Generate Meteogram",
             type="primary",
             use_container_width=True,
-            disabled=not selected_models or not valid_dates,
+            disabled=not _can_run,
         ):
             st.session_state.gen_fechas = [str(d_start), str(d_end)]
             st.session_state.gen_models = selected_models
             st.session_state.open_dialog = True
+
+        # ── DOWNLOAD EXCEL ────────────────────────────────────
+        _wx_stations = st.session_state.wx_stations
+        _wx_selected = st.session_state.wx_selected
+        _wu_key      = st.session_state.wu_api_key.strip()
+        _labels      = _station_labels(_wx_stations) if _wx_stations else {}
+        _excel_key   = (
+            tuple(selected_models),
+            tuple(sorted(_wx_selected)),
+            str(d_start), str(d_end),
+            _wu_key,
+        )
+        if _excel_key != st.session_state.excel_key:
+            st.session_state.excel_bytes = None
+            st.session_state.excel_key   = _excel_key
+
+        _dl_disabled = not _can_run or (not selected_models and not _wx_selected)
+        if st.button("📥 Prepare data download",
+                     use_container_width=True,
+                     disabled=_dl_disabled):
+            with st.spinner("Fetching data…"):
+                st.session_state.excel_bytes = _build_excel_bytes(
+                    place.name, place.lat, place.lon,
+                    place.elev, str(place.tzinfo),
+                    (str(d_start), str(d_end)),
+                    tuple(selected_models),
+                    tuple(sorted(_wx_selected)),
+                    _wu_key,
+                    tuple(_labels.items()),
+                )
+        if st.session_state.excel_bytes:
+            st.download_button(
+                "⬇ Download Excel",
+                data=st.session_state.excel_bytes,
+                file_name=f"meteogram_{place.name}_{d_start}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
 # ── DIALOG (fuera del sidebar) ────────────────────────────────
 if st.session_state.open_dialog:
