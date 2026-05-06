@@ -43,6 +43,7 @@ class MeteoSfc:
         self.fechas = fechas
         self.datos = pd.DataFrame()
         self.weather_models = WEATHER_MODELS.copy()
+        self.station_sources: set[str] = set()
 
     # ══════════════════════════════════════════════════════════════════════
     #  DATA PIPELINE
@@ -75,6 +76,23 @@ class MeteoSfc:
             raise ValueError(f"Unknown source: '{source}'. "
                              f"Available: 'openmeteo', 'era5'")
 
+        return self.datos
+
+    def get_data_station(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Append a station DataFrame (from datasources.wx_stations) to self.datos.
+
+        The DataFrame must have a 'source' column with the station identifier.
+        It is passed through _transform() so that wind arrows and fuel moisture
+        (Fosberg, requires is_day + T + RH) are computed.  VPD-based FM will
+        be NaN because WU does not provide vapour_pressure_deficit.
+        """
+        if df is None or df.empty:
+            return self.datos
+        station_id = str(df["source"].iloc[0])
+        df_t = self._transform(df.copy())
+        self.datos = pd.concat([self.datos, df_t], ignore_index=True)
+        self.station_sources.add(station_id)
         return self.datos
 
     def _fetch_openmeteo_models(self, models: list):
@@ -274,7 +292,14 @@ class MeteoSfc:
 
         n_sources = len(source_list)
         single_source = (n_sources == 1)
-        has_vertical = (vrt is not None and vrt.datos is not None and single_source)
+        _src0 = source_list[0]
+        has_vertical = (
+            vrt is not None
+            and vrt.datos is not None
+            and single_source
+            and _src0 not in self.station_sources
+            and self.weather_models.get(str(_src0), {}).get('type') == 'forecast'
+        )
 
         # ── FIGURE ────────────────────────────────────────
         total_rows = 4
@@ -334,16 +359,28 @@ class MeteoSfc:
         def plot_var(feat, axis, data):
             cfg = VAR_CFG[feat]
             if single_source:
-                d = data[data.source == source_list[0]]
-                axis.plot(d['time_mpl'], d[feat],
-                          color=cfg['color'], linestyle=cfg['style'],
-                          label=cfg['label'], zorder=5)
+                src = source_list[0]
+                d   = data[data.source == src]
+                if src in self.station_sources:
+                    axis.scatter(d['time_mpl'], d[feat],
+                                 color=cfg['color'], marker='o', s=18,
+                                 label=cfg['label'], zorder=5)
+                else:
+                    axis.plot(d['time_mpl'], d[feat],
+                              color=cfg['color'], linestyle=cfg['style'],
+                              label=cfg['label'], zorder=5)
             else:
                 for idx, src in enumerate(source_list):
                     d = data[data.source == src]
-                    axis.plot(d['time_mpl'], d[feat],
-                              color=cfg['palette'][idx], linestyle=cfg['style'],
-                              label=src, zorder=5)
+                    color = cfg['palette'][idx]
+                    if src in self.station_sources:
+                        axis.scatter(d['time_mpl'], d[feat],
+                                     color=color, marker='o', s=18,
+                                     label=src, zorder=5)
+                    else:
+                        axis.plot(d['time_mpl'], d[feat],
+                                  color=color, linestyle=cfg['style'],
+                                  label=src, zorder=5)
 
         # ── PANEL 0: VERTICAL PROFILE or WIND DIRECTION ──
         if has_vertical:
@@ -366,8 +403,13 @@ class MeteoSfc:
         if single_source:
             ax[WIND].legend(loc='upper left', fontsize=7)
         else:
-            model_h = [mlines.Line2D([], [], color=colors['greens'][i], label=m)
-                       for i, m in enumerate(source_list)]
+            model_h = [
+                mlines.Line2D([], [], color=colors['greens'][i],
+                              marker='o' if m in self.station_sources else None,
+                              linestyle='None' if m in self.station_sources else '-',
+                              markersize=5, label=m)
+                for i, m in enumerate(source_list)
+            ]
             style_h = [mlines.Line2D([], [], color='grey', linestyle='-', label='Speed'),
                        mlines.Line2D([], [], color='grey', linestyle='--', label='Gusts')]
             ax[WIND].legend(handles=model_h + style_h,
@@ -396,14 +438,24 @@ class MeteoSfc:
             h2, l2 = ax_rh.get_legend_handles_labels()
             ax_rh.legend(h2, l2, loc='upper right', fontsize=7)
         else:
-            model_ht = [mlines.Line2D([], [], color=colors['reds'][i], label=m)
-                        for i, m in enumerate(source_list)]
+            model_ht = [
+                mlines.Line2D([], [], color=colors['reds'][i],
+                              marker='o' if m in self.station_sources else None,
+                              linestyle='None' if m in self.station_sources else '-',
+                              markersize=5, label=m)
+                for i, m in enumerate(source_list)
+            ]
             style_ht = [mlines.Line2D([], [], color='grey', linestyle='-', label='Temp'),
                         mlines.Line2D([], [], color='grey', linestyle='--', label='Dewpoint')]
             ax[TEMP].legend(handles=model_ht + style_ht,
                             loc='upper left', fontsize=7, ncol=2)
-            model_hr = [mlines.Line2D([], [], color=colors['blues'][i], label=m)
-                        for i, m in enumerate(source_list)]
+            model_hr = [
+                mlines.Line2D([], [], color=colors['blues'][i],
+                              marker='o' if m in self.station_sources else None,
+                              linestyle='None' if m in self.station_sources else '-',
+                              markersize=5, label=m)
+                for i, m in enumerate(source_list)
+            ]
             ax_rh.legend(handles=model_hr, loc='upper right', fontsize=7,
                          title='RH %', title_fontsize=7)
 
@@ -421,8 +473,13 @@ class MeteoSfc:
         if single_source:
             ax[FUEL].legend(loc='upper left', fontsize=7)
         else:
-            model_hf = [mlines.Line2D([], [], color=colors['yellows'][i], label=m)
-                        for i, m in enumerate(source_list)]
+            model_hf = [
+                mlines.Line2D([], [], color=colors['yellows'][i],
+                              marker='o' if m in self.station_sources else None,
+                              linestyle='None' if m in self.station_sources else '-',
+                              markersize=5, label=m)
+                for i, m in enumerate(source_list)
+            ]
             style_hf = [mlines.Line2D([], [], color='grey', linestyle='--', label='Fosberg'),
                         mlines.Line2D([], [], color='grey', linestyle='-', label='VPD')]
             ax[FUEL].legend(handles=model_hf + style_hf,

@@ -1,7 +1,10 @@
 """Streamlit viewer — Open Meteograms."""
 
 import calendar
+import os
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -12,6 +15,7 @@ from scripts.place import Place
 from scripts.meteo_sfc import MeteoSfc
 from scripts.meteo_vrt import MeteoVrt
 from scripts.weather_models import WEATHER_MODELS
+from datasources.wx_stations import fetch_wu_stations_near, fetch_wu_hourly
 
 
 # ── CONFIG ────────────────────────────────────────────────────
@@ -30,6 +34,11 @@ _DEFAULTS = {
     "open_dialog": False,
     "last_click": None,      # coords (lat, lon) del último click procesado
     "last_selected": None,   # label del último resultado de búsqueda procesado
+    # weather stations
+    "wx_stations": [],       # list[dict] from fetch_wu_stations_near
+    "wx_selected": set(),    # set of stationId strings
+    "wu_api_key": os.environ.get("WU_API_KEY", ""),
+    "wx_radius_km": 50,
 }
 for k, v in _DEFAULTS.items():
     st.session_state.setdefault(k, v)
@@ -75,7 +84,8 @@ _LBL_TILES = (
 )
 
 
-def _build_map(center, zoom, basemap, place=None):
+def _build_map(center, zoom, basemap, place=None,
+               wx_stations=None, wx_selected=None):
     if basemap == "🗺️ Map":
         m = folium.Map(location=center, zoom_start=zoom, tiles="CartoDB positron")
     elif basemap == "🛰️ Satellite":
@@ -90,7 +100,47 @@ def _build_map(center, zoom, basemap, place=None):
         ).add_to(m)
     if place:
         folium.Marker([place.lat, place.lon], tooltip=place.name).add_to(m)
+    # ── Weather stations ──────────────────────────────────────
+    selected = wx_selected or set()
+    for s in (wx_stations or []):
+        if s.get("lat") is None or s.get("lon") is None:
+            continue
+        sid = s["stationId"]
+        is_sel = sid in selected
+        folium.CircleMarker(
+            location=[s["lat"], s["lon"]],
+            radius=8 if is_sel else 6,
+            color="#ffffff" if is_sel else "#f8a100",
+            weight=2 if is_sel else 1,
+            fill=True,
+            fill_color="#f8a100",
+            fill_opacity=1.0 if is_sel else 0.75,
+            tooltip=sid,
+            popup=folium.Popup(_station_popup(s), max_width=240),
+        ).add_to(m)
     return m
+
+
+# ── WEATHER STATIONS ──────────────────────────────────────────
+@st.cache_data(ttl=3_600)
+def _cached_wu_stations(lat: float, lon: float, radius_km: float,
+                         api_key: str) -> list:
+    return fetch_wu_stations_near(lat, lon, radius_km, api_key)
+
+
+def _station_popup(s: dict) -> str:
+    chips = []
+    if s.get("temp_c")        is not None: chips.append(f"🌡 {s['temp_c']}°C")
+    if s.get("humidity_pct")  is not None: chips.append(f"💧 {s['humidity_pct']}%")
+    if s.get("windspeed_kmh") is not None: chips.append(f"💨 {s['windspeed_kmh']} km/h")
+    if s.get("pressure_hpa")  is not None: chips.append(f"📊 {s['pressure_hpa']} hPa")
+    name = s.get("name") or s.get("stationId", "")
+    lines = [f"<b style='font-size:13px'>{name}</b>",
+             f"<code style='font-size:10px;color:#888'>{s['stationId']}</code>"]
+    if s.get("adm1"):    lines.append(f"<small>📍 {s['adm1']}</small>")
+    if s.get("elev_m") is not None: lines.append(f"<small>⛰ {s['elev_m']} m</small>")
+    if chips: lines.append("<small>" + "  " + "  ".join(chips) + "</small>")
+    return "<br>".join(lines)
 
 
 # ── NOMINATIM ─────────────────────────────────────────────────
@@ -218,6 +268,8 @@ _m = _build_map(
     st.session_state.map_zoom,
     _basemap,
     st.session_state.place,
+    wx_stations=st.session_state.wx_stations,
+    wx_selected=st.session_state.wx_selected,
 )
 
 map_data = st_folium(
@@ -256,9 +308,23 @@ def _dialog():
             sfc = MeteoSfc(place, fechas)
             sfc.get_data("openmeteo", models=models)
             vrt = None
-            if len(models) == 1:
+            if (len(models) == 1
+                    and WEATHER_MODELS.get(models[0], {}).get('type') == 'forecast'):
                 vrt = MeteoVrt(place, fechas)
                 vrt.get_data("openmeteo", model=models[0])
+
+        wx_selected = st.session_state.get("wx_selected", set())
+        wu_key      = st.session_state.get("wu_api_key", "").strip()
+        if wx_selected and wu_key:
+            for sid in wx_selected:
+                with st.spinner(f"Downloading station {sid}…"):
+                    df = fetch_wu_hourly(sid, fechas[0], fechas[1], wu_key)
+                if df is not None and not df.empty:
+                    sfc.get_data_station(df)
+                else:
+                    st.warning(f"⚠ No data for station {sid} in this date range.")
+
+        with st.spinner("Rendering…"):
             fig = sfc.meteoplot(vrt=vrt)
             st.pyplot(fig)
     except Exception as e:
@@ -385,6 +451,69 @@ with st.sidebar:
                         f"📅 {info['days']}"
                     )
             selected_models = list(dict.fromkeys(m for m in raw_models if m != "—"))
+
+        # ── WEATHER STATIONS ──────────────────────────────────
+        with st.expander("📡 Weather stations", expanded=False):
+            wu_key = st.text_input(
+                "WU API Key",
+                value=st.session_state.wu_api_key,
+                type="password",
+                key="wu_api_key_input",
+                placeholder="e1f10a1e78da46f5…",
+                help="Set WU_API_KEY in your environment to pre-fill on startup.",
+            )
+            st.session_state.wu_api_key = wu_key
+
+            radius_km = st.slider(
+                "Search radius (km)", 10, 200,
+                value=st.session_state.wx_radius_km,
+                step=10, key="wx_radius_slider",
+            )
+            st.session_state.wx_radius_km = radius_km
+
+            search_disabled = not wu_key.strip()
+            if st.button("🔍 Search nearby stations",
+                         disabled=search_disabled,
+                         use_container_width=True):
+                with st.spinner("Searching stations…"):
+                    found = _cached_wu_stations(
+                        place.lat, place.lon, radius_km, wu_key.strip()
+                    )
+                st.session_state.wx_stations = found
+                st.session_state.wx_selected = set()
+                if not found:
+                    st.warning("No stations found. Try increasing the radius.")
+
+            stations = st.session_state.wx_stations
+            if stations:
+                st.caption(f"{len(stations)} stations found")
+                st.divider()
+                new_selected = set(st.session_state.wx_selected)
+                for s in stations:
+                    sid  = s["stationId"]
+                    name = s.get("name") or sid
+                    loc  = " · ".join(filter(None, [s.get("adm1"), s.get("country")]))
+                    elev = f"  ⛰ {s['elev_m']} m" if s.get("elev_m") is not None else ""
+                    label_md = f"**{sid}**  {name}"
+                    chips = []
+                    if s.get("temp_c")        is not None: chips.append(f"🌡 {s['temp_c']}°C")
+                    if s.get("humidity_pct")  is not None: chips.append(f"💧 {s['humidity_pct']}%")
+                    if s.get("windspeed_kmh") is not None: chips.append(f"💨 {s['windspeed_kmh']} km/h")
+                    col_cb, col_info = st.columns([1, 5])
+                    checked = col_cb.checkbox("", value=sid in new_selected,
+                                              key=f"wx_cb_{sid}")
+                    col_info.markdown(label_md)
+                    if loc or elev:
+                        col_info.caption(f"{loc}{elev}")
+                    if chips:
+                        col_info.caption("  ".join(chips))
+                    if checked:
+                        new_selected.add(sid)
+                    else:
+                        new_selected.discard(sid)
+                st.session_state.wx_selected = new_selected
+                if new_selected:
+                    st.caption(f"✓ {len(new_selected)} station(s) selected for meteogram")
 
         # ── GENERATE ──────────────────────────────────────────
         st.divider()
