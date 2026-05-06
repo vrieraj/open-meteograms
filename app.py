@@ -510,6 +510,52 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
 
+    # ── VECTOR LAYERS ─────────────────────────────────────────
+    st.markdown("**📂 Vector layers**")
+    uploaded = st.file_uploader(
+        "Upload GeoJSON",
+        type=["geojson", "json"],
+        key="geojson_upload",
+        label_visibility="collapsed",
+    )
+    if uploaded is not None:
+        try:
+            raw = json.loads(uploaded.read())
+            if raw.get("type") == "Feature":
+                raw = {"type": "FeatureCollection", "features": [raw]}
+            n_feat = len(raw.get("features") or [])
+            fname = uploaded.name.rsplit(".", 1)[0]
+            existing = [l["name"] for l in st.session_state.geojson_layers]
+            if fname not in existing:
+                st.session_state.geojson_layers.append({
+                    "name":    fname,
+                    "data":    raw,
+                    "color":   "#e05c00",
+                    "visible": True,
+                    "n_feat":  n_feat,
+                })
+                st.success(f"Loaded **{fname}** — {n_feat} features")
+        except Exception as exc:
+            st.error(f"Invalid GeoJSON: {exc}")
+
+    layers = st.session_state.geojson_layers
+    to_remove = None
+    for i, layer in enumerate(layers):
+        col_info, col_col, col_del = st.columns([4, 1, 0.5])
+        col_info.markdown(f"**{layer['name']}**")
+        col_info.caption(f"{layer['n_feat']} features")
+        layer["color"] = col_col.color_picker(
+            "", value=layer["color"],
+            key=f"vec_col_{i}", label_visibility="collapsed"
+        )
+        if col_del.button("✕", key=f"vec_del_{i}"):
+            to_remove = i
+    if to_remove is not None:
+        st.session_state.geojson_layers.pop(to_remove)
+        st.rerun()
+
+    st.divider()
+
     if place:
         today = date.today()
 
@@ -626,53 +672,6 @@ with st.sidebar:
                 if new_selected:
                     st.caption(f"✓ {len(new_selected)} station(s) selected for meteogram")
 
-        # ── VECTOR LAYERS ─────────────────────────────────────
-        with st.expander("📂 Vector layers", expanded=False):
-            uploaded = st.file_uploader(
-                "Upload GeoJSON",
-                type=["geojson", "json"],
-                key="geojson_upload",
-                label_visibility="collapsed",
-            )
-            if uploaded is not None:
-                try:
-                    raw = json.loads(uploaded.read())
-                    if raw.get("type") == "Feature":
-                        raw = {"type": "FeatureCollection", "features": [raw]}
-                    n_feat = len(raw.get("features") or [])
-                    fname = uploaded.name.rsplit(".", 1)[0]
-                    existing = [l["name"] for l in st.session_state.geojson_layers]
-                    if fname not in existing:
-                        st.session_state.geojson_layers.append({
-                            "name":   fname,
-                            "data":   raw,
-                            "color":  "#e05c00",
-                            "visible": True,
-                            "n_feat": n_feat,
-                        })
-                        st.success(f"Loaded **{fname}** — {n_feat} features")
-                except Exception as exc:
-                    st.error(f"Invalid GeoJSON: {exc}")
-
-            layers = st.session_state.geojson_layers
-            to_remove = None
-            for i, layer in enumerate(layers):
-                col_vis, col_info, col_col, col_del = st.columns([0.5, 4, 1, 0.5])
-                layer["visible"] = col_vis.checkbox(
-                    "", value=layer["visible"], key=f"vec_vis_{i}"
-                )
-                col_info.markdown(f"**{layer['name']}**")
-                col_info.caption(f"{layer['n_feat']} features")
-                layer["color"] = col_col.color_picker(
-                    "", value=layer["color"],
-                    key=f"vec_col_{i}", label_visibility="collapsed"
-                )
-                if col_del.button("🗑", key=f"vec_del_{i}"):
-                    to_remove = i
-            if to_remove is not None:
-                st.session_state.geojson_layers.pop(to_remove)
-                st.rerun()
-
         # ── GENERATE ──────────────────────────────────────────
         st.divider()
         _can_run = bool(selected_models) and valid_dates
@@ -723,6 +722,14 @@ with st.sidebar:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center;font-size:12px'>"
+        "<a href='https://github.com/vrieraj/open-meteograms' target='_blank'>"
+        "About · GitHub</a></div>",
+        unsafe_allow_html=True,
+    )
 
 # ── DIALOG (fuera del sidebar) ────────────────────────────────
 if st.session_state.open_dialog:
