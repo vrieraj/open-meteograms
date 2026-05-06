@@ -2,6 +2,7 @@
 
 import calendar
 import io
+import json
 import os
 from collections import Counter
 from dataclasses import dataclass, field
@@ -45,6 +46,8 @@ _DEFAULTS = {
     # excel download
     "excel_bytes": None,
     "excel_key": None,
+    # vector layers
+    "geojson_layers": [],  # list[dict]: {name, data, color, visible, n_feat}
 }
 for k, v in _DEFAULTS.items():
     st.session_state.setdefault(k, v)
@@ -90,8 +93,18 @@ _LBL_TILES = (
 )
 
 
+def _geojson_name_field(data: dict) -> str | None:
+    """Return the first property key that looks like a feature name, or None."""
+    for feat in (data.get("features") or [])[:10]:
+        props = feat.get("properties") or {}
+        for candidate in ("name", "Name", "NAME", "label", "nombre", "titulo"):
+            if candidate in props:
+                return candidate
+    return None
+
+
 def _build_map(center, zoom, basemap, place=None,
-               wx_stations=None, wx_selected=None):
+               wx_stations=None, wx_selected=None, geojson_layers=None):
     if basemap == "🗺️ Map":
         m = folium.Map(location=center, zoom_start=zoom, tiles="CartoDB positron")
     elif basemap == "🛰️ Satellite":
@@ -124,14 +137,41 @@ def _build_map(center, zoom, basemap, place=None,
             tooltip=sid,
             popup=folium.Popup(_station_popup(s), max_width=240),
         ).add_to(m)
+    # ── GeoJSON vector layers ─────────────────────────────────
+    has_layers = False
+    for layer in (geojson_layers or []):
+        if not layer.get("visible"):
+            continue
+        color = layer["color"]
+        name_field = _geojson_name_field(layer["data"])
+        gj = folium.GeoJson(
+            layer["data"],
+            name=layer["name"],
+            style_function=lambda f, c=color: {
+                "fillColor": c,
+                "color": c,
+                "weight": 2,
+                "fillOpacity": 0.25,
+                "opacity": 0.85,
+            },
+            tooltip=folium.GeoJsonTooltip(
+                fields=[name_field], labels=False
+            ) if name_field else None,
+        )
+        gj.add_to(m)
+        has_layers = True
+    if has_layers:
+        folium.LayerControl(collapsed=False).add_to(m)
     return m
 
 
 # ── STATION HELPERS ───────────────────────────────────────────
 def _station_labels(stations: list[dict]) -> dict[str, str]:
     """stationId → display label (name or ID, with 01/02 index for duplicates)."""
-    raw = {s["stationId"]: (s.get("name") or "").strip() or s["stationId"]
-           for s in stations}
+    raw = {
+        s["stationId"]: (((s.get("name") or "").split(",") or [s["stationId"]])[0]).strip() or s["stationId"]
+        for s in stations
+    }
     counts = Counter(raw.values())
     seen: dict[str, int] = {}
     result: dict[str, str] = {}
@@ -334,6 +374,7 @@ _m = _build_map(
     st.session_state.place,
     wx_stations=st.session_state.wx_stations,
     wx_selected=st.session_state.wx_selected,
+    geojson_layers=st.session_state.geojson_layers,
 )
 
 map_data = st_folium(
@@ -584,6 +625,53 @@ with st.sidebar:
                 st.session_state.wx_selected = new_selected
                 if new_selected:
                     st.caption(f"✓ {len(new_selected)} station(s) selected for meteogram")
+
+        # ── VECTOR LAYERS ─────────────────────────────────────
+        with st.expander("📂 Vector layers", expanded=False):
+            uploaded = st.file_uploader(
+                "Upload GeoJSON",
+                type=["geojson", "json"],
+                key="geojson_upload",
+                label_visibility="collapsed",
+            )
+            if uploaded is not None:
+                try:
+                    raw = json.loads(uploaded.read())
+                    if raw.get("type") == "Feature":
+                        raw = {"type": "FeatureCollection", "features": [raw]}
+                    n_feat = len(raw.get("features") or [])
+                    fname = uploaded.name.rsplit(".", 1)[0]
+                    existing = [l["name"] for l in st.session_state.geojson_layers]
+                    if fname not in existing:
+                        st.session_state.geojson_layers.append({
+                            "name":   fname,
+                            "data":   raw,
+                            "color":  "#e05c00",
+                            "visible": True,
+                            "n_feat": n_feat,
+                        })
+                        st.success(f"Loaded **{fname}** — {n_feat} features")
+                except Exception as exc:
+                    st.error(f"Invalid GeoJSON: {exc}")
+
+            layers = st.session_state.geojson_layers
+            to_remove = None
+            for i, layer in enumerate(layers):
+                col_vis, col_info, col_col, col_del = st.columns([0.5, 4, 1, 0.5])
+                layer["visible"] = col_vis.checkbox(
+                    "", value=layer["visible"], key=f"vec_vis_{i}"
+                )
+                col_info.markdown(f"**{layer['name']}**")
+                col_info.caption(f"{layer['n_feat']} features")
+                layer["color"] = col_col.color_picker(
+                    "", value=layer["color"],
+                    key=f"vec_col_{i}", label_visibility="collapsed"
+                )
+                if col_del.button("🗑", key=f"vec_del_{i}"):
+                    to_remove = i
+            if to_remove is not None:
+                st.session_state.geojson_layers.pop(to_remove)
+                st.rerun()
 
         # ── GENERATE ──────────────────────────────────────────
         st.divider()

@@ -334,33 +334,27 @@ class MeteoSfc:
         for i in range(total_rows):
             ax[i].set_xlim(init_date_mpl, end_date_mpl)
             if n_days <= 2:
-                ax[i].xaxis.set_major_locator(mdates.HourLocator(interval=1))
-                ax[i].xaxis.set_minor_locator(mdates.DayLocator())
+                ax[i].xaxis.set_major_locator(mdates.DayLocator())
+                ax[i].xaxis.set_minor_locator(mdates.HourLocator(byhour=range(1, 24)))
             elif n_days <= 4:
-                ax[i].xaxis.set_major_locator(
-                    mdates.HourLocator(byhour=[0, 6, 12, 18]))
-                ax[i].xaxis.set_minor_locator(mdates.DayLocator())
+                ax[i].xaxis.set_major_locator(mdates.DayLocator())
+                ax[i].xaxis.set_minor_locator(mdates.HourLocator(byhour=[6, 12, 18]))
             else:
                 ax[i].xaxis.set_major_locator(mdates.DayLocator())
             if i < total_rows - 1:
                 ax[i].tick_params(labelbottom=False)
             else:
+                ax[i].xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
                 if n_days <= 4:
-                    ax[i].xaxis.set_major_formatter(
-                        mdates.DateFormatter('%H:%M'))
-                    ax[i].xaxis.set_minor_formatter(
-                        mdates.DateFormatter('\n%b %d'))
-                    ax[i].tick_params(axis='x', which='minor', length=0)
-                else:
-                    ax[i].xaxis.set_major_formatter(
-                        mdates.DateFormatter('%b-%d'))
+                    ax[i].xaxis.set_minor_formatter(mdates.DateFormatter('%H:%M'))
+                    ax[i].tick_params(axis='x', which='minor', labelsize=7, length=3)
                 ax[i].set_xlabel('Source: Open-Meteo.com Weather API')
 
         # ── NIGHT SHADING ─────────────────────────────────
         mask = (datos_ref.is_day == 0).fillna(False)
         for a in [ax[WIND], ax[TEMP], ax[FUEL]]:
             a.fill_between(datos_ref['time_mpl'], 0, 100,
-                           where=mask, alpha=0.1, color='lightblue', zorder=0)
+                           where=mask, alpha=0.25, color='lightblue', zorder=0)
 
         # ── PALETTES ──────────────────────────────────────
         colors = {
@@ -524,16 +518,21 @@ class MeteoSfc:
     def _plot_wind_direction(self, ax, datos, source_list, datos_ref):
         ax.fill_between(datos_ref['time_mpl'], 0, 100,
                         where=(datos_ref.is_day == 0).fillna(False),
-                        alpha=0.2, color='lightblue', zorder=0)
+                        alpha=0.35, color='lightblue', zorder=0)
         for index, src in enumerate(source_list):
             datos_src = datos.loc[datos.source == src]
             for _, row in datos_src.iterrows():
                 ax.text(mdates.date2num(row['time']), index + 1,
                         row['wind_direction_arrow'],
                         fontsize=18, ha='center', va='center', color='k', zorder=5)
+        ax.grid(True, axis='x', alpha=0.3)
         ax.set_ylim(0, len(source_list) + 1)
         ax.set_yticks(range(1, len(source_list) + 1))
-        ax.set_yticklabels(source_list)
+        y_labels = [
+            self.station_names.get(src, src) if src in self.station_sources else src
+            for src in source_list
+        ]
+        ax.set_yticklabels(y_labels)
 
     @staticmethod
     def _plot_ignition_semaphore(ax_fuel, datos_ref):
