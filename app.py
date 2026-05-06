@@ -43,6 +43,7 @@ _DEFAULTS = {
     "wx_selected": set(),    # set of stationId strings
     "wu_api_key": os.environ.get("WU_API_KEY", ""),
     "wx_radius_km": 50,
+    "wx_searched": False,      # True after a search completes (for empty-result warning)
     # excel download
     "excel_bytes": None,
     "excel_key": None,
@@ -244,6 +245,8 @@ def _station_popup(s: dict) -> str:
     if s.get("adm1"):    lines.append(f"<small>📍 {s['adm1']}</small>")
     if s.get("elev_m") is not None: lines.append(f"<small>⛰ {s['elev_m']} m</small>")
     if chips: lines.append("<small>" + "  " + "  ".join(chips) + "</small>")
+    wu_url = f"https://www.wunderground.com/dashboard/pws/{s['stationId']}"
+    lines.append(f"<small><a href='{wu_url}' target='_blank'>View on Wunderground →</a></small>")
     return "<br>".join(lines)
 
 
@@ -645,10 +648,12 @@ with st.sidebar:
                     )
                 st.session_state.wx_stations = found
                 st.session_state.wx_selected = set()
-                if not found:
-                    st.warning("No stations found. Try increasing the radius.")
+                st.session_state.wx_searched = True
+                st.rerun()
 
             stations = st.session_state.wx_stations
+            if st.session_state.wx_searched and not stations:
+                st.warning("No stations found. Try increasing the radius.")
             if stations:
                 labels = _station_labels(stations)
                 st.caption(f"{len(stations)} stations found")
