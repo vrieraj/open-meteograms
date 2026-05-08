@@ -506,3 +506,8 @@ function escHtml(s) {
 /* ── INIT ───────────────────────────────────────────────────── */
 initModelSelects();
 initDates();
+
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => { if (cfg.wu_api_key) document.getElementById('wu-key').value = cfg.wu_api_key; })
+  .catch(() => {});

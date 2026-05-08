@@ -4,7 +4,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(ROOT, '.env'))
@@ -24,6 +24,11 @@ app.register_blueprint(stations_bp)
 @app.route('/')
 def index():
     return send_from_directory(STATIC, 'index.html')
+
+
+@app.route('/api/config')
+def config():
+    return jsonify({'wu_api_key': os.getenv('WU_API_KEY', '')})
 
 
 if __name__ == '__main__':
