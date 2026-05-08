@@ -82,9 +82,16 @@ document.addEventListener('click', e => {
 
 async function doSearch(q) {
   try {
-    const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const res  = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=geocodejson&q=${encodeURIComponent(q)}&limit=5&addressdetails=1&namedetails=1&accept-language=en`
+    );
     const data = await res.json();
-    renderDropdown(Array.isArray(data) ? data : []);
+    const results = (data.features || []).map(f => ({
+      label: f.properties.geocoding.label,
+      lat:   f.geometry.coordinates[1],
+      lon:   f.geometry.coordinates[0],
+    }));
+    renderDropdown(results);
   } catch { hideDropdown(); }
 }
 
@@ -113,10 +120,14 @@ async function selectResult(r) {
 map.on('click', async (e) => {
   const { lat, lng } = e.latlng;
   try {
-    const res  = await fetch(`/api/reverse?lat=${lat}&lon=${lng}`);
+    const res  = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=geocodejson&lat=${lat}&lon=${lng}`
+    );
     const data = await res.json();
-    if (data.error) return;
-    await loadPlace(data.lat, data.lon, data.label);
+    const feats = data.features || [];
+    if (!feats.length) return;
+    const label = feats[0].properties.geocoding.label || '';
+    await loadPlace(lat, lng, label);
   } catch {}
 });
 
