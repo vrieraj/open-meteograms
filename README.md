@@ -1,3 +1,13 @@
+---
+title: Open Meteograms
+emoji: 🌤️
+colorFrom: orange
+colorTo: red
+sdk: docker
+pinned: false
+license: gpl-3.0
+---
+
 # 🌤️ Open Meteograms — Wildfire Weather Viewer
 
 A web-based meteogram generator focused on **wildfire weather** variables. Fetches hourly forecasts and historical reanalysis from the [Open-Meteo API](https://open-meteo.com/) and renders 4-panel fire-weather charts for any location worldwide.
