@@ -335,7 +335,7 @@ class MeteoSfc:
             ax[i].set_xlim(init_date_mpl, end_date_mpl)
             if n_days <= 2:
                 ax[i].xaxis.set_major_locator(mdates.DayLocator())
-                ax[i].xaxis.set_minor_locator(mdates.HourLocator(byhour=range(1, 24)))
+                ax[i].xaxis.set_minor_locator(mdates.HourLocator(byhour=range(3, 24, 3)))
             elif n_days <= 4:
                 ax[i].xaxis.set_major_locator(mdates.DayLocator())
                 ax[i].xaxis.set_minor_locator(mdates.HourLocator(byhour=[6, 12, 18]))
