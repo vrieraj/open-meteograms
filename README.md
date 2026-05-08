@@ -1,7 +1,7 @@
 ---
 title: Open Meteograms
 emoji: 🌤️
-colorFrom: orange
+colorFrom: red
 colorTo: red
 sdk: docker
 pinned: false
