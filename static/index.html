@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Meteograms</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="layout">
+
+    <!-- Map area -->
+    <div id="map-area">
+      <div id="toolbar">
+        <div id="search-container">
+          <input type="text" id="search-input" placeholder="Search location…" autocomplete="off">
+          <ul id="search-dropdown" class="hidden"></ul>
+        </div>
+        <div id="basemap-btns">
+          <button class="basemap-btn active" data-basemap="map">Map</button>
+          <button class="basemap-btn" data-basemap="satellite">Satellite</button>
+          <button class="basemap-btn" data-basemap="hybrid">Hybrid</button>
+        </div>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div id="sidebar-header">🌤️ Open Meteograms</div>
+
+      <div class="panel">
+        <div class="panel-title collapsible open" data-target="location-body">📍 Location</div>
+        <div id="location-body" class="panel-body">
+          <div id="location-content">
+            <p class="hint">Search a location or click the map</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title collapsible" data-target="layers-body">📂 Vector layers</div>
+        <div id="layers-body" class="panel-body collapsed">
+          <input type="file" id="geojson-upload" accept=".geojson,.json">
+          <div id="layers-list"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="dates-panel">
+        <div class="panel-title collapsible open" data-target="dates-body">📅 Date range</div>
+        <div id="dates-body" class="panel-body">
+          <div class="date-row">
+            <label>Start</label>
+            <input type="date" id="date-start">
+          </div>
+          <div class="date-row">
+            <label>End</label>
+            <input type="date" id="date-end">
+          </div>
+          <div id="date-warning"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title collapsible open" data-target="models-body">🌐 Weather models</div>
+        <div id="models-body" class="panel-body">
+          <div id="models-selects"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title collapsible" data-target="stations-body">📡 Weather stations</div>
+        <div id="stations-body" class="panel-body collapsed">
+          <input type="password" id="wu-key" placeholder="WU API Key">
+          <div class="slider-row">
+            <label>Radius: <span id="radius-val">50</span> km</label>
+            <input type="range" id="radius-slider" min="10" max="200" step="10" value="50">
+          </div>
+          <button id="search-stations-btn">🔍 Search stations</button>
+          <div id="stations-list"></div>
+        </div>
+      </div>
+
+      <div id="actions">
+        <button id="generate-btn" class="primary" disabled>⚡ Generate Meteogram</button>
+        <button id="excel-btn" class="secondary" disabled>⬇ Download Excel</button>
+        <div id="about-link">
+          <a href="https://github.com/vrieraj/open-meteograms" target="_blank">About · GitHub</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Meteogram modal -->
+  <div id="modal" class="hidden">
+    <div id="modal-backdrop"></div>
+    <div id="modal-content">
+      <div id="modal-header">
+        <span id="modal-title">Meteogram</span>
+        <button id="modal-close">✕</button>
+      </div>
+      <div id="modal-body">
+        <div id="modal-spinner">Generating meteogram…</div>
+        <img id="meteogram-img" class="hidden" alt="Meteogram">
+        <div id="modal-error" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -342,7 +342,7 @@ class MeteoSfc:
             else:
                 ax[i].xaxis.set_major_locator(mdates.DayLocator())
             if n_days <= 4:
-                ax[i].xaxis.grid(True, which='minor', alpha=0.15, linestyle=':')
+                ax[i].xaxis.grid(True, which='minor', alpha=0.4, linestyle=':')
             if i < total_rows - 1:
                 ax[i].tick_params(labelbottom=False)
             else:
@@ -493,6 +493,10 @@ class MeteoSfc:
         ax[FUEL].set_ylim(0, 35)
         ax[FUEL].set_yticks(range(0, 35, 5))
         ax[FUEL].grid(True, alpha=0.3)
+
+        if n_days <= 4:
+            for a in ax:
+                a.xaxis.grid(True, which='minor', alpha=0.4, linestyle=':')
 
         if single_source:
             ax[FUEL].legend(loc='upper left', fontsize=7)
