@@ -473,19 +473,61 @@ def _dialog():
                 st.pyplot(fig)
 
         with tab_skewt:
-            if vrt is None or vrt.datos is None:
-                st.info(
-                    "Skew-T requires a single **forecast** model "
-                    "(not archive / station-only)."
-                )
+            import matplotlib.pyplot as _plt
+
+            skewt_models = [m for m in models
+                            if WEATHER_MODELS.get(m, {}).get('type') in ('forecast', 'archive')]
+
+            if not skewt_models:
+                st.info("Skew-T requires at least one forecast or archive model.")
             else:
-                import matplotlib.pyplot as _plt
-                times = vrt.datos['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()
-                sel_time = st.select_slider("🕐 Hour", options=times)
-                with st.spinner("Rendering Skew-T…"):
-                    fig_st = vrt.skewt(sel_time)
-                    st.pyplot(fig_st)
-                    _plt.close(fig_st)
+                if len(skewt_models) > 1:
+                    sel_model = st.selectbox("Model", skewt_models, key="skewt_model_sel")
+                else:
+                    sel_model = skewt_models[0]
+                    st.caption(f"Model: **{sel_model}**")
+
+                _cache_key = ("skewt_vrt", sel_model, fechas[0], fechas[1],
+                              place.lat, place.lon)
+
+                if _cache_key not in st.session_state:
+                    with st.spinner(f"Fetching {sel_model} vertical data…"):
+                        vrt_s = MeteoVrt(place, fechas)
+                        vrt_s.get_data('openmeteo', model=sel_model)
+                        vrt_s._fetch_skewt_data()
+                    st.session_state[_cache_key] = vrt_s
+
+                vrt_s = st.session_state[_cache_key]
+
+                if vrt_s._datos_skewt is None:
+                    st.warning("No vertical data available for this model.")
+                else:
+                    times = vrt_s._datos_skewt['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()
+                    sel_time = st.select_slider("🕐 Hour", options=times, key="skewt_time_sel")
+
+                    col_skewt, col_idx = st.columns([3, 1])
+
+                    with col_idx:
+                        st.markdown("**Índices**")
+                        indices = vrt_s.compute_skewt_indices(sel_time)
+                        if indices:
+                            st.metric("CAPE", f"{indices['cape']:.0f} J/kg")
+                            st.metric("CIN", f"{indices['cin']:.0f} J/kg")
+                            st.metric("LCL", f"{indices['lcl_hpa']:.0f} hPa")
+                            st.metric("LCL T", f"{indices['lcl_temp']:.1f} °C")
+                            if indices.get('trigger_temp') is not None:
+                                st.metric("T disparo", f"{indices['trigger_temp']:.1f} °C")
+                        else:
+                            st.caption("—")
+
+                    with col_skewt:
+                        with st.spinner("Rendering Skew-T…"):
+                            try:
+                                fig_st = vrt_s.skewt(sel_time)
+                                st.pyplot(fig_st)
+                                _plt.close(fig_st)
+                            except Exception as e_st:
+                                st.error(f"Skew-T error: {e_st}")
     except Exception as e:
         st.error(str(e))
 

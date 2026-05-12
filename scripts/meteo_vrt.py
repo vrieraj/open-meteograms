@@ -427,6 +427,93 @@ class MeteoVrt:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
         self._datos_skewt = df
 
+    def _skewt_arrays(self, time: str):
+        """
+        Extract profile arrays from _datos_skewt for a given time.
+        Returns (actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals).
+        """
+        if self._datos_skewt is None:
+            self._fetch_skewt_data()
+        t = pd.to_datetime(time)
+        idx = (self._datos_skewt['time'] - t).abs().idxmin()
+        row = self._datos_skewt.loc[idx]
+        actual_time = self._datos_skewt.loc[idx, 'time']
+
+        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
+        for level in sorted(self.LEVELS_SKEWT, reverse=True):
+            col_t  = f'temperature_{level}hPa'
+            col_rh = f'relative_humidity_{level}hPa'
+            col_ws = f'wind_speed_{level}hPa'
+            col_wd = f'wind_direction_{level}hPa'
+            T  = row[col_t]  if col_t  in row.index else np.nan
+            rh = row[col_rh] if col_rh in row.index else np.nan
+            if pd.isna(T) or pd.isna(rh):
+                continue
+            e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
+            e   = (rh / 100.0) * e_s
+            Td  = 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
+            ws  = row[col_ws] if col_ws in row.index else np.nan
+            wd  = row[col_wd] if col_wd in row.index else np.nan
+            ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
+            u = (-ws_kt * np.sin(np.radians(wd))
+                 if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
+            v = (-ws_kt * np.cos(np.radians(wd))
+                 if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
+            pressure_vals.append(level)
+            temp_vals.append(T)
+            dewp_vals.append(Td)
+            u_vals.append(u)
+            v_vals.append(v)
+        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals
+
+    def compute_skewt_indices(self, time: str) -> dict:
+        """
+        Compute thermodynamic indices for a single time step.
+
+        Returns dict with keys: cape, cin, lcl_hpa, lcl_temp, trigger_temp.
+        All temperatures in °C, pressures in hPa, energy in J/kg.
+        Returns {} on any error.
+        """
+        try:
+            import metpy.calc as mpcalc
+            from metpy.units import units as munits
+        except ImportError:
+            return {}
+        try:
+            _, pv, tv, tdv, _, _ = self._skewt_arrays(time)
+            if len(pv) < 3:
+                return {}
+            p     = np.array(pv) * munits.hPa
+            T_arr = np.array(tv) * munits.degC
+            Td_arr= np.array(tdv) * munits.degC
+
+            # LCL
+            p_lcl, T_lcl = mpcalc.lcl(p[0], T_arr[0], Td_arr[0])
+
+            # CAPE / CIN
+            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr)
+
+            # Trigger temperature via CCL
+            trigger_temp = None
+            try:
+                p_ccl, T_ccl = mpcalc.ccl(p, T_arr, Td_arr)[:2]
+                T_trigger = mpcalc.dry_lapse(
+                    np.atleast_1d(p[0]), T_ccl, reference_pressure=p_ccl
+                )[0]
+                trigger_temp = float(T_trigger.to('degC').magnitude)
+            except Exception:
+                pass
+
+            return {
+                'cape':         round(float(cape.magnitude), 1),
+                'cin':          round(float(cin.magnitude), 1),
+                'lcl_hpa':      round(float(p_lcl.magnitude), 1),
+                'lcl_temp':     round(float(T_lcl.to('degC').magnitude), 1),
+                'trigger_temp': round(trigger_temp, 1) if trigger_temp is not None else None,
+            }
+        except Exception:
+            return {}
+
     def skewt(self, time: str) -> plt.Figure:
         """
         Plot Skew-T log-P diagram for a single time step.
@@ -448,44 +535,8 @@ class MeteoVrt:
         if self.datos is None:
             raise ValueError("No vertical data. Call get_data() first.")
 
-        # Lazy-fetch extended levels (600, 500 hPa) on first call
-        if self._datos_skewt is None:
-            self._fetch_skewt_data()
-
-        t = pd.to_datetime(time)
-        idx = (self._datos_skewt['time'] - t).abs().idxmin()
-        row = self._datos_skewt.loc[idx]
-        actual_time = self._datos_skewt.loc[idx, 'time']
-
-        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
-
-        for level in sorted(self.LEVELS_SKEWT, reverse=True):  # surface → upper
-            col_t = f'temperature_{level}hPa'
-            col_rh = f'relative_humidity_{level}hPa'
-            col_ws = f'wind_speed_{level}hPa'
-            col_wd = f'wind_direction_{level}hPa'
-
-            T = row[col_t] if col_t in row.index else np.nan
-            rh = row[col_rh] if col_rh in row.index else np.nan
-            if pd.isna(T) or pd.isna(rh):
-                continue
-
-            # Dewpoint via Magnus formula (°C)
-            e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
-            e = (rh / 100.0) * e_s
-            Td = 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
-
-            ws = row[col_ws] if col_ws in row.index else np.nan
-            wd = row[col_wd] if col_wd in row.index else np.nan
-            ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
-            u = -ws_kt * np.sin(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
-            v = -ws_kt * np.cos(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
-
-            pressure_vals.append(level)
-            temp_vals.append(T)
-            dewp_vals.append(Td)
-            u_vals.append(u)
-            v_vals.append(v)
+        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = \
+            self._skewt_arrays(time)
 
         if not pressure_vals:
             raise ValueError("No valid data for the selected time step.")
