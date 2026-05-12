@@ -74,6 +74,20 @@ def place():
             }}
         }
         p = Place(feature)
+        sr, ss = None, None
+        try:
+            from astral import LocationInfo
+            from astral.sun import sun as astral_sun
+            from datetime import date as _date
+            import pytz
+            loc = LocationInfo(latitude=p.lat, longitude=p.lon,
+                               timezone=str(p.tzinfo))
+            s = astral_sun(loc.observer, date=_date.today(),
+                           tzinfo=pytz.timezone(str(p.tzinfo)))
+            sr = s['sunrise'].strftime('%H:%M')
+            ss = s['sunset'].strftime('%H:%M')
+        except Exception:
+            pass
         return jsonify({
             'name': p.name,
             'lat': p.lat,
@@ -83,6 +97,8 @@ def place():
             'delta_time': p.delta_time,
             'urls': p.meteo,
             'map': p.map,
+            'sunrise': sr,
+            'sunset': ss,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

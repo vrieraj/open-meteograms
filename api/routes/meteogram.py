@@ -115,3 +115,63 @@ def excel():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/skewt', methods=['POST'])
+def skewt():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    for k in ('lat', 'lon', 'name', 'model', 'date_start', 'date_end'):
+        if k not in data:
+            return jsonify({'error': f'Missing: {k}'}), 400
+
+    try:
+        import base64
+        import matplotlib.pyplot as plt
+        from scripts.place import Place
+        from scripts.meteo_vrt import MeteoVrt
+        from scripts.weather_models import WEATHER_MODELS
+
+        model = data['model']
+        if model not in WEATHER_MODELS:
+            return jsonify({'error': f'Unknown model: {model}'}), 400
+
+        place = Place(_build_place_feature(data))
+        fechas = [data['date_start'], data['date_end']]
+        time = data.get('time')
+
+        vrt = MeteoVrt(place, fechas)
+        vrt.get_data('openmeteo', model=model)
+        vrt._fetch_skewt_data()
+
+        if vrt._datos_skewt is None:
+            return jsonify({'error': 'No vertical data available'}), 500
+
+        times = vrt._datos_skewt['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()
+        if not times:
+            return jsonify({'error': 'No time steps available'}), 500
+
+        if time is None:
+            noon = [t for t in times if t.endswith('12:00')]
+            time = noon[0] if noon else times[0]
+
+        indices = vrt.compute_skewt_indices(time)
+
+        fig = vrt.skewt(time)
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+        buf.seek(0)
+        img_b64 = base64.b64encode(buf.read()).decode()
+        plt.close(fig)
+
+        return jsonify({
+            'times': times,
+            'time': time,
+            'image': f'data:image/png;base64,{img_b64}',
+            'indices': indices,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
