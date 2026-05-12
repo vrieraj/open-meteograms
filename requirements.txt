@@ -10,3 +10,6 @@ flask>=3.0
 gunicorn>=21.0
 astral>=3.2
 metpy>=1.6
+xarray>=2025.1.0
+zarr>=2.18
+gcsfs>=2025.1.0

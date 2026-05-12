@@ -25,7 +25,12 @@ def fetch_era5_arco(lat, lon, start_date, end_date, levels=None, variables=None)
         'geopotential',
     ]
 
-    ds = xr.open_zarr(ARCO_DATASET, consolidated=False)
+    # Public bucket: force anonymous access to avoid requiring local GCP ADC
+    ds = xr.open_zarr(
+        ARCO_DATASET,
+        consolidated=False,
+        storage_options={'token': 'anon'},
+    )
     sub = ds[variables].sel(
         latitude=lat,
         longitude=lon,

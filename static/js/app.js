@@ -26,6 +26,7 @@ const state = {
 };
 
 let _modalPayload = null;
+let _modalBaseRange = null;
 
 /* ── MAP ─────────────────────────────────────────────────────────────────────────── */
 const TILES = {
@@ -410,6 +411,7 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
   };
 
   _modalPayload = { ...payload };
+  _modalBaseRange = { date_start: payload.date_start, date_end: payload.date_end };
   openModal(state.place.name, payload.date_start, payload.date_end, models);
 
   try {
@@ -471,8 +473,8 @@ function showModalImage(url) {
   const img = document.getElementById('meteogram-img');
   img.onload = () => {
     document.getElementById('modal-spinner').style.display = 'none';
-    if (_modalPayload) {
-      initZoomSliders(_modalPayload.date_start, _modalPayload.date_end);
+    if (_modalBaseRange) {
+      initZoomSliders(_modalBaseRange.date_start, _modalBaseRange.date_end);
       document.getElementById('meteo-zoom').classList.remove('hidden');
     }
   };
@@ -718,10 +720,10 @@ function updateZoomFill() {
 }
 
 function updateZoomLabel() {
-  if (!_modalPayload) return;
+  if (!_modalBaseRange) return;
   const startSl = document.getElementById('zoom-start-sl');
   const endSl   = document.getElementById('zoom-end-sl');
-  const base = new Date(_modalPayload.date_start + 'T00:00:00');
+  const base = new Date(_modalBaseRange.date_start + 'T00:00:00');
   const d1 = new Date(base); d1.setDate(base.getDate() + parseInt(startSl.value));
   const d2 = new Date(base); d2.setDate(base.getDate() + parseInt(endSl.value));
   const fmt = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
@@ -743,10 +745,10 @@ document.getElementById('zoom-end-sl').addEventListener('input', function () {
 });
 
 document.getElementById('zoom-apply-btn').addEventListener('click', async () => {
-  if (!_modalPayload) return;
+  if (!_modalPayload || !_modalBaseRange) return;
   const startSl = document.getElementById('zoom-start-sl');
   const endSl   = document.getElementById('zoom-end-sl');
-  const base     = new Date(_modalPayload.date_start + 'T00:00:00');
+  const base     = new Date(_modalBaseRange.date_start + 'T00:00:00');
   const newStart = new Date(base); newStart.setDate(base.getDate() + parseInt(startSl.value));
   const newEnd   = new Date(base); newEnd.setDate(base.getDate() + parseInt(endSl.value));
 
