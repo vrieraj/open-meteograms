@@ -25,10 +25,8 @@ from datasources.openmeteo import fetch_vertical
 class MeteoVrt:
     """Vertical profile data and visualization."""
 
-    # 8 levels for meteogram data pipeline and BLH calculation
-    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700]
-
-    # 4 levels for barb display in time-height cross section (less clutter)
+    # 4 levels for meteogram data pipeline, BLH calculation and barb display
+    LEVELS_ALL = [1000, 925, 850, 700]
     LEVELS_DISPLAY = [1000, 925, 850, 700]
 
     # 10 levels for Skew-T (fetched on demand, separate from meteogram data)
@@ -56,7 +54,9 @@ class MeteoVrt:
         self.fechas = fechas
         self.datos = None
         self.source_name = None
-        self._datos_skewt = None   # lazy-loaded on first skewt() call
+        self._datos_skewt = None    # lazy-loaded on first skewt() call
+        self._skewt_modelo = None   # model dict used for Skew-T fetch
+        self._skewt_fechas = None   # date range used for Skew-T fetch
         self.weather_models = WEATHER_MODELS.copy()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -105,6 +105,8 @@ class MeteoVrt:
         if data is None:
             return
         self._process_response(data, model_name)
+        self._skewt_modelo = modelo
+        self._skewt_fechas = self.fechas
 
     def _fetch_era5_year(self, year: int):
         """Fetch ERA5 pressure-level data for a year, shift to current year."""
@@ -121,9 +123,10 @@ class MeteoVrt:
         if data is None:
             return
         self._process_response(data, str(year))
-        # Shift dates to current year
         delta = int(year_now) - year
         self.datos['time'] = self.datos['time'] + pd.DateOffset(years=delta)
+        self._skewt_modelo = self.weather_models['ERA5']
+        self._skewt_fechas = fechas_era5
 
     def _process_response(self, data: dict, source_name: str):
         """Transform raw API response into processed DataFrame."""
@@ -407,13 +410,10 @@ class MeteoVrt:
 
     def _fetch_skewt_data(self):
         """Fetch extended pressure levels (LEVELS_SKEWT) for Skew-T on demand."""
-        if self.source_name is None:
+        if self._skewt_modelo is None:
             raise ValueError("Call get_data() first.")
-        modelo = self.weather_models.get(self.source_name)
-        if modelo is None:
-            raise ValueError(f"Skew-T fetch not supported for source '{self.source_name}'")
         data = fetch_vertical(self.lat, self.lon, self.elev,
-                              self.tzinfo, self.fechas, modelo,
+                              self.tzinfo, self._skewt_fechas, self._skewt_modelo,
                               self.LEVELS_SKEWT)
         if data is None:
             self._datos_skewt = self.datos
