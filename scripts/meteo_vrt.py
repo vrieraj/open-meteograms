@@ -20,6 +20,8 @@ import matplotlib.dates as mdates
 
 from .weather_models import WEATHER_MODELS
 from datasources.openmeteo import fetch_vertical
+from datasources.dynamical import fetch_dynamical_forecast, SUPPORTED_MODELS
+from core.vertical_dataset import VerticalDataset
 
 
 class MeteoVrt:
@@ -53,11 +55,61 @@ class MeteoVrt:
         self.tzinfo = place.tzinfo
         self.fechas = fechas
         self.datos = None
+        self.dataset = None
         self.source_name = None
         self._datos_skewt = None    # lazy-loaded on first skewt() call
         self._skewt_modelo = None   # model dict used for Skew-T fetch
         self._skewt_fechas = None   # date range used for Skew-T fetch
         self.weather_models = WEATHER_MODELS.copy()
+
+
+    @staticmethod
+    def _dewpoint_from_t_rh(T, rh):
+        e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
+        e = (rh / 100.0) * e_s
+        return 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
+
+    def _to_vertical_dataset(self, wide_df: pd.DataFrame, levels: list[int]) -> VerticalDataset:
+        records = []
+        for _, row in wide_df.iterrows():
+            t = row['time']
+            for level in levels:
+                tcol = f'temperature_{level}hPa'
+                rhcol = f'relative_humidity_{level}hPa'
+                wcol = f'wind_speed_{level}hPa'
+                dcol = f'wind_direction_{level}hPa'
+                zcol = f'geopotential_height_{level}hPa'
+                if tcol not in row.index:
+                    continue
+                T = row.get(tcol, np.nan)
+                rh = row.get(rhcol, np.nan)
+                ws = row.get(wcol, np.nan)
+                wd = row.get(dcol, np.nan)
+                z = row.get(zcol, np.nan)
+                if pd.isna(T) or pd.isna(rh):
+                    continue
+                dew = self._dewpoint_from_t_rh(T, rh)
+                ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
+                u = -ws_kt * np.sin(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+                v = -ws_kt * np.cos(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+                records.append({
+                    'time': t, 'pressure': level, 'temperature': T,
+                    'relative_humidity': rh, 'dewpoint': dew, 'u': u, 'v': v,
+                    'wind_speed': ws, 'wind_direction': wd, 'geopotential_height': z,
+                })
+        ds = VerticalDataset(pd.DataFrame.from_records(records))
+        ds.validate()
+        return ds
+
+    def get_profile(self, time):
+        if self.dataset is None:
+            raise ValueError('No vertical dataset. Call get_data() first.')
+        return self.dataset.get_profile(time)
+
+    def get_time_series(self, level):
+        if self.dataset is None:
+            raise ValueError('No vertical dataset. Call get_data() first.')
+        return self.dataset.get_time_series(level)
 
     # ══════════════════════════════════════════════════════════════════════
     #  DATA PIPELINE
@@ -72,6 +124,7 @@ class MeteoVrt:
         source : str
             'openmeteo' — NWP model (requires model='AROME')
             'era5'      — ERA5 by year (requires year=2024)
+            'dynamical' — Dynamical.org soundings (ECMWF/GFS)
             Future: 'radiosonde' (requires station='08001')
 
         Returns
@@ -88,9 +141,17 @@ class MeteoVrt:
                 raise ValueError("'era5' source requires year=YYYY")
             self._fetch_era5_year(year)
 
+        elif source == 'dynamical':
+            model = kwargs.get('model', 'ECMWF')
+            init_time = kwargs.get('init_time')
+            forecast_hour = kwargs.get('forecast_hour', 0)
+            if init_time is None:
+                raise ValueError("'dynamical' source requires init_time='YYYY-MM-DDTHH:MM:SSZ'")
+            self._fetch_dynamical(model, init_time, forecast_hour)
+
         else:
             raise ValueError(f"Unknown source: '{source}'. "
-                             f"Available: 'openmeteo', 'era5'")
+                             f"Available: 'openmeteo', 'era5', 'dynamical'")
 
         return self.datos
 
@@ -107,6 +168,60 @@ class MeteoVrt:
         self._process_response(data, model_name)
         self._skewt_modelo = modelo
         self._skewt_fechas = self.fechas
+
+    def _fetch_dynamical(self, model_name: str, init_time: str, forecast_hour: int):
+        """Fetch vertical sounding from Dynamical.org for ECMWF/GFS."""
+        if model_name.upper() not in SUPPORTED_MODELS:
+            # Backward compatibility: non-supported Dynamical models still use Open-Meteo
+            self._fetch_openmeteo(model_name)
+            return
+
+        ds = fetch_dynamical_forecast(
+            model=model_name,
+            lat=self.lat,
+            lon=self.lon,
+            init_time=init_time,
+            forecast_hour=forecast_hour,
+        )
+        self.dataset = ds
+        self.datos = self._dataset_to_legacy_wide(ds.df)
+        self.source_name = f'dynamical:{model_name.upper()}'
+
+    def _dataset_to_legacy_wide(self, df_long: pd.DataFrame) -> pd.DataFrame:
+        """Convert LONG dataset to legacy wide columns for existing plotting."""
+        long = df_long.copy()
+        long['time'] = pd.to_datetime(long['time'])
+        wide = pd.DataFrame({'time': sorted(long['time'].unique())})
+
+        for level, chunk in long.groupby('pressure'):
+            level_i = int(round(level))
+            chunk = chunk.sort_values('time')
+            merged = chunk[['time', 'temperature', 'relative_humidity', 'wind_speed',
+                            'wind_direction', 'geopotential_height']].rename(columns={
+                'temperature': f'temperature_{level_i}hPa',
+                'relative_humidity': f'relative_humidity_{level_i}hPa',
+                'wind_speed': f'wind_speed_{level_i}hPa',
+                'wind_direction': f'wind_direction_{level_i}hPa',
+                'geopotential_height': f'geopotential_height_{level_i}hPa',
+            })
+            wide = wide.merge(merged, on='time', how='left')
+
+        wide['day_year'] = wide['time'].dt.dayofyear
+        for level in sorted(long['pressure'].unique()):
+            li = int(round(level))
+            ws = wide.get(f'wind_speed_{li}hPa')
+            wd = wide.get(f'wind_direction_{li}hPa')
+            if ws is not None and wd is not None:
+                ws_kt = ws * 0.539957
+                wide[f'u_{li}'] = -ws_kt * np.sin(np.radians(wd))
+                wide[f'v_{li}'] = -ws_kt * np.cos(np.radians(wd))
+
+        if 'geopotential_height_1000hPa' in wide.columns:
+            z1000 = pd.to_numeric(wide['geopotential_height_1000hPa'], errors='coerce')
+            wide['boundary_layer_height'] = np.maximum(z1000 - self.elev, 10)
+        else:
+            wide['boundary_layer_height'] = np.nan
+        return wide
 
     def _fetch_era5_year(self, year: int):
         """Fetch ERA5 pressure-level data for a year, shift to current year."""
@@ -174,6 +289,7 @@ class MeteoVrt:
                   f"{n_filled}/{n_total} estimated via Richardson (Ri=0.25)")
 
         self.datos = df
+        self.dataset = self._to_vertical_dataset(df, self.LEVELS_ALL)
         self.source_name = source_name
 
     # ══════════════════════════════════════════════════════════════════════
