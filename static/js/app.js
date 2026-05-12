@@ -1,4 +1,4 @@
-/* ── WEATHER MODELS ───────────────────────────────────────────────────── */
+/* ── WEATHER MODELS ─────────────────────────────────────────────────────────────────────── */
 const WEATHER_MODELS = {
   'ICON':       { provider: 'DWD (Germany)',          type: 'forecast', resolution: '2–11 km' },
   'GFS':        { provider: 'NOAA (USA)',              type: 'forecast', resolution: '3–25 km' },
@@ -17,7 +17,7 @@ const WEATHER_MODELS = {
   'ERA5':       { provider: 'ECMWF',                   type: 'archive',  resolution: '11 km' },
 };
 
-/* ── STATE ──────────────────────────────────────────────────────────────────── */
+/* ── STATE ────────────────────────────────────────────────────────────────────────────── */
 const state = {
   place: null,
   stations: [],
@@ -25,7 +25,9 @@ const state = {
   geojsonLayers: [],
 };
 
-/* ── MAP ─────────────────────────────────────────────────────────────────────────── */
+let _modalPayload = null;
+
+/* ── MAP ─────────────────────────────────────────────────────────────────────────────────── */
 const TILES = {
   map:        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                 { attribution: '© CartoDB', maxZoom: 19 }),
@@ -60,7 +62,7 @@ function switchBasemap(name) {
 document.querySelectorAll('.basemap-btn').forEach(btn =>
   btn.addEventListener('click', () => switchBasemap(btn.dataset.basemap)));
 
-/* ── SEARCH ────────────────────────────────────────────────────────────────────────── */
+/* ── SEARCH ────────────────────────────────────────────────────────────────────────────────────── */
 let searchTimeout = null;
 const searchInput    = document.getElementById('search-input');
 const searchDropdown = document.getElementById('search-dropdown');
@@ -116,7 +118,7 @@ async function selectResult(r) {
   map.setView([r.lat, r.lon], 12);
 }
 
-/* ── MAP CLICK ──────────────────────────────────────────────────────────────────────── */
+/* ── MAP CLICK ─────────────────────────────────────────────────────────────────────────────────────── */
 map.on('click', async (e) => {
   const { lat, lng } = e.latlng;
   try {
@@ -131,7 +133,7 @@ map.on('click', async (e) => {
   } catch {}
 });
 
-/* ── PLACE ────────────────────────────────────────────────────────────────────────── */
+/* ── PLACE ─────────────────────────────────────────────────────────────────────────────────────── */
 async function loadPlace(lat, lon, name) {
   try {
     const res   = await fetch(`/api/place?lat=${lat}&lon=${lon}&name=${encodeURIComponent(name)}`);
@@ -166,7 +168,7 @@ function renderLocationPanel(p) {
     </div>`;
 }
 
-/* ── STATIONS ────────────────────────────────────────────────────────────────────────── */
+/* ── STATIONS ──────────────────────────────────────────────────────────────────────────────────────── */
 document.getElementById('radius-slider').addEventListener('input', function () {
   document.getElementById('radius-val').textContent = this.value;
 });
@@ -261,7 +263,7 @@ function renderStationsList() {
   });
 }
 
-/* ── GEOJSON LAYERS ────────────────────────────────────────────────────────────────────────── */
+/* ── GEOJSON LAYERS ──────────────────────────────────────────────────────────────────────────────────────── */
 document.getElementById('geojson-upload').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -307,7 +309,7 @@ function renderLayersList() {
   });
 }
 
-/* ── MODELS ────────────────────────────────────────────────────────────────────────── */
+/* ── MODELS ────────────────────────────────────────────────────────────────────────────────────── */
 function initModelSelects() {
   const container = document.getElementById('models-selects');
   Object.keys(WEATHER_MODELS).forEach((_, i) => {
@@ -340,7 +342,7 @@ function getSelectedModels() {
   )];
 }
 
-/* ── DATES ────────────────────────────────────────────────────────────────────────── */
+/* ── DATES ────────────────────────────────────────────────────────────────────────────────────── */
 function initDates() {
   const today = new Date();
   const end   = new Date(today);
@@ -374,7 +376,7 @@ function validateDates() {
   }
 }
 
-/* ── COLLAPSIBLES ──────────────────────────────────────────────────────────────────────── */
+/* ── COLLAPSIBLES ──────────────────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById(btn.dataset.target).classList.toggle('collapsed');
@@ -382,7 +384,7 @@ document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   });
 });
 
-/* ── GENERATE ────────────────────────────────────────────────────────────────────────── */
+/* ── GENERATE ────────────────────────────────────────────────────────────────────────────────────── */
 function updateGenerateBtn() {
   const disabled = !state.place || getSelectedModels().length === 0;
   document.getElementById('generate-btn').disabled = disabled;
@@ -407,6 +409,7 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
     }),
   };
 
+  _modalPayload = { ...payload };
   openModal(state.place.name, payload.date_start, payload.date_end, models);
 
   try {
@@ -427,7 +430,7 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
   }
 });
 
-/* ── MODAL ────────────────────────────────────────────────────────────────────────── */
+/* ── MODAL ────────────────────────────────────────────────────────────────────────────────────── */
 function openModal(name, start, end, models) {
   document.getElementById('modal-title').textContent = `${name} — ${start} → ${end}`;
 
@@ -436,9 +439,13 @@ function openModal(name, start, end, models) {
   document.getElementById('meteogram-img').classList.add('hidden');
   document.getElementById('modal-error').classList.add('hidden');
 
+  // Zoom reset
+  document.getElementById('meteo-zoom').classList.add('hidden');
+
   // Skew-T tab reset
-  skewtState.loaded = false;
-  skewtState.times  = [];
+  skewtState.loaded   = false;
+  skewtState.loading  = false;
+  skewtState.times    = [];
   document.getElementById('skewt-spinner').classList.add('hidden');
   document.getElementById('skewt-main').classList.add('hidden');
   document.getElementById('skewt-error').classList.add('hidden');
@@ -462,7 +469,13 @@ function openModal(name, start, end, models) {
 
 function showModalImage(url) {
   const img = document.getElementById('meteogram-img');
-  img.onload = () => { document.getElementById('modal-spinner').style.display = 'none'; };
+  img.onload = () => {
+    document.getElementById('modal-spinner').style.display = 'none';
+    if (_modalPayload) {
+      initZoomSliders(_modalPayload.date_start, _modalPayload.date_end);
+      document.getElementById('meteo-zoom').classList.remove('hidden');
+    }
+  };
   img.src = url;
   img.classList.remove('hidden');
 }
@@ -527,19 +540,19 @@ document.getElementById('modal-close').addEventListener('click', () =>
 document.getElementById('modal-backdrop').addEventListener('click', () =>
   document.getElementById('modal').classList.add('hidden'));
 
-/* ── MODAL TABS ──────────────────────────────────────────────────────────────────────── */
+/* ── MODAL TABS ──────────────────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.modal-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     document.getElementById(btn.dataset.tab).classList.remove('hidden');
-    if (btn.dataset.tab === 'tab-skewt' && !skewtState.loaded) loadSkewt();
+    if (btn.dataset.tab === 'tab-skewt' && !skewtState.loaded && !skewtState.loading) loadSkewt();
   });
 });
 
-/* ── SKEW-T ────────────────────────────────────────────────────────────────────────── */
-const skewtState = { loaded: false, times: [] };
+/* ── SKEW-T ──────────────────────────────────────────────────────────────────────────────────────── */
+const skewtState = { loaded: false, loading: false, times: [] };
 
 function initSkewtModelSel(models) {
   const sel = document.getElementById('skewt-model-sel');
@@ -585,16 +598,19 @@ function updateNavArrows() {
 }
 
 async function loadSkewt() {
+  if (skewtState.loading) return;
   const model = document.getElementById('skewt-model-sel').value;
   if (!state.place || !model || !WEATHER_MODELS[model]) {
     showSkewtError('Select a valid forecast or archive model.');
     return;
   }
+  skewtState.loading = true;
   document.getElementById('skewt-spinner').classList.remove('hidden');
   document.getElementById('skewt-main').classList.add('hidden');
   document.getElementById('skewt-error').classList.add('hidden');
 
   const result = await doFetchSkewt({ model, time: null });
+  skewtState.loading = false;
   if (!result) return;
 
   skewtState.times  = result.times;
@@ -605,6 +621,7 @@ async function loadSkewt() {
     `<option value="${t}"${t === result.time ? ' selected' : ''}>${t}</option>`
   ).join('');
   document.getElementById('skewt-time-row').classList.remove('hidden');
+  updateNavArrows();
   showSkewtResult(result);
 }
 
@@ -678,12 +695,92 @@ function showSkewtError(msg) {
   el.classList.remove('hidden');
 }
 
-/* ── UTILS ────────────────────────────────────────────────────────────────────────── */
+/* ── ZOOM SLIDER ──────────────────────────────────────────────────────────────────────────────────────── */
+function initZoomSliders(dateStart, dateEnd) {
+  const n = Math.round((new Date(dateEnd + 'T00:00:00') - new Date(dateStart + 'T00:00:00')) / 86400000);
+  const startSl = document.getElementById('zoom-start-sl');
+  const endSl   = document.getElementById('zoom-end-sl');
+  startSl.min = 0; startSl.max = n; startSl.value = 0;
+  endSl.min   = 0; endSl.max   = n; endSl.value   = n;
+  updateZoomFill();
+  updateZoomLabel();
+}
+
+function updateZoomFill() {
+  const startSl = document.getElementById('zoom-start-sl');
+  const endSl   = document.getElementById('zoom-end-sl');
+  const n  = parseInt(startSl.max) || 1;
+  const s  = parseInt(startSl.value) / n * 100;
+  const e  = parseInt(endSl.value)   / n * 100;
+  const fill = document.getElementById('dual-range-fill');
+  fill.style.left  = s + '%';
+  fill.style.width = (e - s) + '%';
+}
+
+function updateZoomLabel() {
+  if (!_modalPayload) return;
+  const startSl = document.getElementById('zoom-start-sl');
+  const endSl   = document.getElementById('zoom-end-sl');
+  const base = new Date(_modalPayload.date_start + 'T00:00:00');
+  const d1 = new Date(base); d1.setDate(base.getDate() + parseInt(startSl.value));
+  const d2 = new Date(base); d2.setDate(base.getDate() + parseInt(endSl.value));
+  const fmt = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  document.getElementById('zoom-label').textContent = `${fmt(d1)} – ${fmt(d2)}`;
+}
+
+document.getElementById('zoom-start-sl').addEventListener('input', function () {
+  const endSl = document.getElementById('zoom-end-sl');
+  if (parseInt(this.value) > parseInt(endSl.value) - 2) this.value = parseInt(endSl.value) - 2;
+  updateZoomFill();
+  updateZoomLabel();
+});
+
+document.getElementById('zoom-end-sl').addEventListener('input', function () {
+  const startSl = document.getElementById('zoom-start-sl');
+  if (parseInt(this.value) < parseInt(startSl.value) + 2) this.value = parseInt(startSl.value) + 2;
+  updateZoomFill();
+  updateZoomLabel();
+});
+
+document.getElementById('zoom-apply-btn').addEventListener('click', async () => {
+  if (!_modalPayload) return;
+  const startSl = document.getElementById('zoom-start-sl');
+  const endSl   = document.getElementById('zoom-end-sl');
+  const base     = new Date(_modalPayload.date_start + 'T00:00:00');
+  const newStart = new Date(base); newStart.setDate(base.getDate() + parseInt(startSl.value));
+  const newEnd   = new Date(base); newEnd.setDate(base.getDate() + parseInt(endSl.value));
+
+  _modalPayload = { ..._modalPayload, date_start: fmtDate(newStart), date_end: fmtDate(newEnd) };
+
+  document.getElementById('modal-spinner').style.display = '';
+  document.getElementById('meteogram-img').classList.add('hidden');
+  document.getElementById('meteo-zoom').classList.add('hidden');
+  document.getElementById('modal-error').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/meteogram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_modalPayload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      showModalError(err.error || 'Unknown error');
+      return;
+    }
+    const blob = await res.blob();
+    showModalImage(URL.createObjectURL(blob));
+  } catch (e) {
+    showModalError(e.message);
+  }
+});
+
+/* ── UTILS ────────────────────────────────────────────────────────────────────────────────────── */
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── INIT ────────────────────────────────────────────────────────────────────────── */
+/* ── INIT ────────────────────────────────────────────────────────────────────────────────────── */
 initModelSelects();
 initDates();
 

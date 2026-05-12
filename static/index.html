@@ -112,6 +112,18 @@
           <div id="modal-spinner">Generating meteogram…</div>
           <img id="meteogram-img" class="hidden" alt="Meteogram">
           <div id="modal-error" class="hidden"></div>
+          <div id="meteo-zoom" class="hidden">
+            <div class="zoom-header">
+              <span id="zoom-label"></span>
+              <button id="zoom-apply-btn" class="zoom-btn">Actualizar</button>
+            </div>
+            <div class="dual-range-wrap">
+              <div class="dual-range-track"></div>
+              <div class="dual-range-fill" id="dual-range-fill"></div>
+              <input type="range" id="zoom-start-sl" class="zoom-sl" min="0" max="10" value="0" step="1">
+              <input type="range" id="zoom-end-sl" class="zoom-sl" min="0" max="10" value="10" step="1">
+            </div>
+          </div>
         </div>
         <!-- Skew-T panel -->
         <div id="tab-skewt" class="tab-panel hidden">
