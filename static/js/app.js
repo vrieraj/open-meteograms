@@ -1,4 +1,4 @@
-/* ── WEATHER MODELS ───────────────────────────────────────────────────── */
+/* ── WEATHER MODELS ───────────────────────────────────────────────────────── */
 const WEATHER_MODELS = {
   'ICON':       { provider: 'DWD (Germany)',          type: 'forecast', resolution: '2–11 km' },
   'GFS':        { provider: 'NOAA (USA)',              type: 'forecast', resolution: '3–25 km' },
@@ -62,7 +62,7 @@ function switchBasemap(name) {
 document.querySelectorAll('.basemap-btn').forEach(btn =>
   btn.addEventListener('click', () => switchBasemap(btn.dataset.basemap)));
 
-/* ── SEARCH ────────────────────────────────────────────────────────────────────────── */
+/* ── SEARCH ────────────────────────────────────────────────────────────────────────────── */
 let searchTimeout = null;
 const searchInput    = document.getElementById('search-input');
 const searchDropdown = document.getElementById('search-dropdown');
@@ -118,7 +118,7 @@ async function selectResult(r) {
   map.setView([r.lat, r.lon], 12);
 }
 
-/* ── MAP CLICK ──────────────────────────────────────────────────────────────────────── */
+/* ── MAP CLICK ────────────────────────────────────────────────────────────────────────────── */
 map.on('click', async (e) => {
   const { lat, lng } = e.latlng;
   try {
@@ -133,7 +133,7 @@ map.on('click', async (e) => {
   } catch {}
 });
 
-/* ── PLACE ────────────────────────────────────────────────────────────────────────── */
+/* ── PLACE ────────────────────────────────────────────────────────────────────────────── */
 async function loadPlace(lat, lon, name) {
   try {
     const res   = await fetch(`/api/place?lat=${lat}&lon=${lon}&name=${encodeURIComponent(name)}`);
@@ -168,7 +168,7 @@ function renderLocationPanel(p) {
     </div>`;
 }
 
-/* ── STATIONS ────────────────────────────────────────────────────────────────────────── */
+/* ── STATIONS ────────────────────────────────────────────────────────────────────────────── */
 document.getElementById('radius-slider').addEventListener('input', function () {
   document.getElementById('radius-val').textContent = this.value;
 });
@@ -263,7 +263,7 @@ function renderStationsList() {
   });
 }
 
-/* ── GEOJSON LAYERS ────────────────────────────────────────────────────────────────────────── */
+/* ── GEOJSON LAYERS ────────────────────────────────────────────────────────────────────────────── */
 document.getElementById('geojson-upload').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -309,7 +309,7 @@ function renderLayersList() {
   });
 }
 
-/* ── MODELS ────────────────────────────────────────────────────────────────────────── */
+/* ── MODELS ────────────────────────────────────────────────────────────────────────────── */
 function initModelSelects() {
   const container = document.getElementById('models-selects');
   Object.keys(WEATHER_MODELS).forEach((_, i) => {
@@ -342,7 +342,7 @@ function getSelectedModels() {
   )];
 }
 
-/* ── DATES ────────────────────────────────────────────────────────────────────────── */
+/* ── DATES ────────────────────────────────────────────────────────────────────────────── */
 function initDates() {
   const today = new Date();
   const end   = new Date(today);
@@ -376,7 +376,7 @@ function validateDates() {
   }
 }
 
-/* ── COLLAPSIBLES ──────────────────────────────────────────────────────────────────────── */
+/* ── COLLAPSIBLES ────────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById(btn.dataset.target).classList.toggle('collapsed');
@@ -384,7 +384,7 @@ document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   });
 });
 
-/* ── GENERATE ────────────────────────────────────────────────────────────────────────── */
+/* ── GENERATE ────────────────────────────────────────────────────────────────────────────── */
 function updateGenerateBtn() {
   const disabled = !state.place || getSelectedModels().length === 0;
   document.getElementById('generate-btn').disabled = disabled;
@@ -430,7 +430,7 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
   }
 });
 
-/* ── MODAL ────────────────────────────────────────────────────────────────────────── */
+/* ── MODAL ────────────────────────────────────────────────────────────────────────────── */
 function openModal(name, start, end, models) {
   document.getElementById('modal-title').textContent = `${name} — ${start} → ${end}`;
 
@@ -540,7 +540,7 @@ document.getElementById('modal-close').addEventListener('click', () =>
 document.getElementById('modal-backdrop').addEventListener('click', () =>
   document.getElementById('modal').classList.add('hidden'));
 
-/* ── MODAL TABS ──────────────────────────────────────────────────────────────────────── */
+/* ── MODAL TABS ────────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.modal-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
@@ -551,7 +551,7 @@ document.querySelectorAll('.modal-tab').forEach(btn => {
   });
 });
 
-/* ── SKEW-T ────────────────────────────────────────────────────────────────────────── */
+/* ── SKEW-T ────────────────────────────────────────────────────────────────────────────── */
 const skewtState = { loaded: false, loading: false, times: [] };
 
 function initSkewtModelSel(models) {
@@ -695,7 +695,7 @@ function showSkewtError(msg) {
   el.classList.remove('hidden');
 }
 
-/* ── ZOOM SLIDER ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+/* ── ZOOM SLIDER ────────────────────────────────────────────────────────────────────────────── */
 function initZoomSliders(dateStart, dateEnd) {
   const n = Math.round((new Date(dateEnd + 'T00:00:00') - new Date(dateStart + 'T00:00:00')) / 86400000);
   const startSl = document.getElementById('zoom-start-sl');
@@ -775,12 +775,12 @@ document.getElementById('zoom-apply-btn').addEventListener('click', async () => 
   }
 });
 
-/* ── UTILS ────────────────────────────────────────────────────────────────────────── */
+/* ── UTILS ────────────────────────────────────────────────────────────────────────────── */
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── INIT ────────────────────────────────────────────────────────────────────────── */
+/* ── INIT ────────────────────────────────────────────────────────────────────────────── */
 initModelSelects();
 initDates();
 
