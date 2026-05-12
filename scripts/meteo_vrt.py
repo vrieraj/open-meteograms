@@ -21,6 +21,7 @@ import matplotlib.dates as mdates
 from .weather_models import WEATHER_MODELS
 from datasources.openmeteo import fetch_vertical
 from datasources.dynamical import fetch_dynamical_forecast, SUPPORTED_MODELS
+from datasources.era5_arco import fetch_era5_arco
 from core.vertical_dataset import VerticalDataset
 
 
@@ -159,6 +160,17 @@ class MeteoVrt:
         """Fetch pressure-level data from Open-Meteo forecast model."""
         if model_name not in self.weather_models:
             raise ValueError(f"Unknown model: '{model_name}'")
+        if model_name == 'ERA5':
+            ds = fetch_era5_arco(
+                self.lat, self.lon, self.fechas[0], self.fechas[1],
+                levels=self.LEVELS_ALL,
+            )
+            self.dataset = ds
+            self.datos = self._dataset_to_legacy_wide(ds.df)
+            self.source_name = model_name
+            self._skewt_modelo = self.weather_models['ERA5']
+            self._skewt_fechas = self.fechas
+            return
         modelo = self.weather_models[model_name]
         data = fetch_vertical(self.lat, self.lon, self.elev,
                               self.tzinfo, self.fechas, modelo,
@@ -528,6 +540,15 @@ class MeteoVrt:
         """Fetch extended pressure levels (LEVELS_SKEWT) for Skew-T on demand."""
         if self._skewt_modelo is None:
             raise ValueError("Call get_data() first.")
+        if self._skewt_modelo.get('keyword') == 'era5':
+            ds = fetch_era5_arco(
+                self.lat, self.lon,
+                self._skewt_fechas[0], self._skewt_fechas[1],
+                levels=self.LEVELS_SKEWT,
+            )
+            self._datos_skewt = self._dataset_to_legacy_wide(ds.df)
+            return
+
         data = fetch_vertical(self.lat, self.lon, self.elev,
                               self.tzinfo, self._skewt_fechas, self._skewt_modelo,
                               self.LEVELS_SKEWT)
@@ -537,7 +558,7 @@ class MeteoVrt:
         df = pd.DataFrame(data['hourly'])
         df['time'] = pd.to_datetime(df['time'])
         for level in self.LEVELS_SKEWT:
-            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction']:
+            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction', 'geopotential_height']:
                 col = f'{var}_{level}hPa'
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -555,7 +576,7 @@ class MeteoVrt:
         row = self._datos_skewt.loc[idx]
         actual_time = self._datos_skewt.loc[idx, 'time']
 
-        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
+        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, z_vals = [], [], [], [], [], []
         for level in sorted(self.LEVELS_SKEWT, reverse=True):
             col_t  = f'temperature_{level}hPa'
             col_rh = f'relative_humidity_{level}hPa'
@@ -563,6 +584,9 @@ class MeteoVrt:
             col_wd = f'wind_direction_{level}hPa'
             T  = row[col_t]  if col_t  in row.index else np.nan
             rh = row[col_rh] if col_rh in row.index else np.nan
+            z_here = row.get(f'geopotential_height_{level}hPa', np.nan)
+            if np.isfinite(z_here) and z_here < self.elev:
+                continue
             if pd.isna(T) or pd.isna(rh):
                 continue
             e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
@@ -580,7 +604,8 @@ class MeteoVrt:
             dewp_vals.append(Td)
             u_vals.append(u)
             v_vals.append(v)
-        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals
+            z_vals.append(z_here)
+        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, z_vals
 
     def compute_skewt_indices(self, time: str) -> dict:
         """
@@ -596,7 +621,7 @@ class MeteoVrt:
         except ImportError:
             return {}
         try:
-            _, pv, tv, tdv, _, _ = self._skewt_arrays(time)
+            _, pv, tv, tdv, _, _, _ = self._skewt_arrays(time)
             if len(pv) < 3:
                 return {}
             p     = np.array(pv) * munits.hPa
@@ -607,7 +632,8 @@ class MeteoVrt:
             p_lcl, T_lcl = mpcalc.lcl(p[0], T_arr[0], Td_arr[0])
 
             # CAPE / CIN
-            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr)
+            parcel = mpcalc.parcel_profile(p, T_arr[0], Td_arr[0])
+            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr, parcel)
 
             # Trigger temperature via CCL
             trigger_temp = None
@@ -651,7 +677,7 @@ class MeteoVrt:
         if self.datos is None:
             raise ValueError("No vertical data. Call get_data() first.")
 
-        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = \
+        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, z_vals = \
             self._skewt_arrays(time)
 
         if not pressure_vals:
@@ -681,6 +707,16 @@ class MeteoVrt:
         skew.ax.set_xlim(-30, 45)
         skew.ax.set_xlabel('Temperature (°C)')
         skew.ax.set_ylabel('Pressure (hPa)')
+        # Right axis: model geopotential height per pressure level
+        if len(z_vals) == len(pressure_vals):
+            ax2 = skew.ax.twinx()
+            ax2.set_ylim(skew.ax.get_ylim())
+            ax2.set_yticks(pressure_vals)
+            ax2.set_yticklabels([
+                f'{int(z)} m' if np.isfinite(z) else '—'
+                for z in z_vals
+            ])
+            ax2.set_ylabel('Height (m ASL)')
 
         time_label = actual_time.strftime('%Y-%m-%d %H:%M UTC') \
             if hasattr(actual_time, 'strftime') else str(actual_time)
