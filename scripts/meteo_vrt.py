@@ -25,16 +25,17 @@ from datasources.openmeteo import fetch_vertical
 class MeteoVrt:
     """Vertical profile data and visualization."""
 
-    # 8 levels for data retrieval and BLH calculation
-    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700]
+    # Levels for data retrieval, BLH calculation, and Skew-T
+    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500]
 
-    # 4 levels for barb display (less clutter)
+    # 4 levels for barb display in time-height cross section (less clutter)
     LEVELS_DISPLAY = [1000, 925, 850, 700]
 
     # Approximate altitudes (m ASL)
     ALTITUDES = {
         1000: 110, 975: 320, 950: 500, 925: 800,
-        900: 1000, 850: 1500, 800: 1900, 700: 3000
+        900: 1000, 850: 1500, 800: 1900, 700: 3000,
+        600: 4200, 500: 5600,
     }
 
     def __init__(self, place, fechas: list[str]):
@@ -398,19 +399,98 @@ class MeteoVrt:
         if handles:
             ax.legend(loc='upper right', fontsize=7, ncol=2).set_zorder(10)
 
-    # ── Skew-T (placeholder) ─────────────────────────────────────────────
+    # ── Skew-T ───────────────────────────────────────────────────────────
 
-    def skewt(self, time: str):
+    def skewt(self, time: str) -> plt.Figure:
         """
         Plot Skew-T log-P diagram for a single time step.
 
         Parameters
         ----------
-        time : str — 'YYYY-MM-DD HH:MM' timestamp
+        time : str — 'YYYY-MM-DD HH:MM' timestamp (nearest match used)
 
-        TODO: Implement with MetPy SkewT using all 8 pressure levels.
+        Returns
+        -------
+        matplotlib.Figure
         """
-        raise NotImplementedError(
-            "Skew-T plotting will be implemented with MetPy. "
-            "Requires: pip install metpy"
+        try:
+            from metpy.plots import SkewT
+            from metpy.units import units as munits
+        except ImportError:
+            raise ImportError("MetPy is required for Skew-T: pip install metpy")
+
+        if self.datos is None:
+            raise ValueError("No vertical data. Call get_data() first.")
+
+        t = pd.to_datetime(time)
+        idx = (self.datos['time'] - t).abs().idxmin()
+        row = self.datos.loc[idx]
+        actual_time = self.datos.loc[idx, 'time']
+
+        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
+
+        for level in sorted(self.LEVELS_ALL, reverse=True):  # surface → upper
+            col_t = f'temperature_{level}hPa'
+            col_rh = f'relative_humidity_{level}hPa'
+            col_ws = f'wind_speed_{level}hPa'
+            col_wd = f'wind_direction_{level}hPa'
+
+            T = row[col_t] if col_t in row.index else np.nan
+            rh = row[col_rh] if col_rh in row.index else np.nan
+            if pd.isna(T) or pd.isna(rh):
+                continue
+
+            # Dewpoint via Magnus formula (°C)
+            e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
+            e = (rh / 100.0) * e_s
+            Td = 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
+
+            ws = row[col_ws] if col_ws in row.index else np.nan
+            wd = row[col_wd] if col_wd in row.index else np.nan
+            ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
+            u = -ws_kt * np.sin(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+            v = -ws_kt * np.cos(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+
+            pressure_vals.append(level)
+            temp_vals.append(T)
+            dewp_vals.append(Td)
+            u_vals.append(u)
+            v_vals.append(v)
+
+        if not pressure_vals:
+            raise ValueError("No valid data for the selected time step.")
+
+        p = np.array(pressure_vals) * munits.hPa
+        T_arr = np.array(temp_vals) * munits.degC
+        Td_arr = np.array(dewp_vals) * munits.degC
+        u_arr = np.array(u_vals) * munits.knots
+        v_arr = np.array(v_vals) * munits.knots
+
+        fig = plt.figure(figsize=(8, 9))
+        skew = SkewT(fig, rotation=45)
+
+        skew.plot(p, T_arr, 'r', linewidth=2, label='Temperature')
+        skew.plot(p, Td_arr, 'g', linewidth=2, label='Dewpoint')
+
+        valid_wind = np.isfinite(u_arr.magnitude) & np.isfinite(v_arr.magnitude)
+        if valid_wind.any():
+            skew.plot_barbs(p[valid_wind], u_arr[valid_wind], v_arr[valid_wind])
+
+        skew.plot_dry_adiabats(alpha=0.25, linewidths=0.7)
+        skew.plot_moist_adiabats(alpha=0.25, linewidths=0.7)
+        skew.plot_mixing_lines(alpha=0.2, linewidths=0.7)
+
+        skew.ax.set_ylim(1050, min(pressure_vals) - 10)
+        skew.ax.set_xlim(-30, 45)
+        skew.ax.set_xlabel('Temperature (°C)')
+        skew.ax.set_ylabel('Pressure (hPa)')
+
+        time_label = actual_time.strftime('%Y-%m-%d %H:%M UTC') \
+            if hasattr(actual_time, 'strftime') else str(actual_time)
+        skew.ax.set_title(
+            f'Skew-T Log-P — {self.source_name} | {self.name}\n{time_label}',
+            fontsize=10, fontweight='bold',
         )
+        skew.ax.legend(loc='upper left', fontsize=8)
+        fig.tight_layout()
+        return fig

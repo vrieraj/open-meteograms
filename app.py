@@ -21,6 +21,13 @@ from scripts.meteo_vrt import MeteoVrt
 from scripts.weather_models import WEATHER_MODELS
 from datasources.wx_stations import fetch_wu_stations_near, fetch_wu_hourly
 
+try:
+    from astral import LocationInfo
+    from astral.sun import sun as astral_sun
+    _ASTRAL_OK = True
+except ImportError:
+    _ASTRAL_OK = False
+
 
 # ── CONFIG ────────────────────────────────────────────────────
 st.set_page_config(page_title="Open Meteograms", layout="wide")
@@ -62,6 +69,19 @@ def _fmt_coord(v: float, is_lat: bool = True) -> str:
 
 def _safe(d: dict, k: str):
     return d.get(k) if isinstance(d, dict) else None
+
+
+def _sunrise_sunset(place, d: date):
+    """Return (sunrise_str, sunset_str) in local time, or (None, None) on error."""
+    if not _ASTRAL_OK:
+        return None, None
+    try:
+        loc = LocationInfo(latitude=place.lat, longitude=place.lon,
+                           timezone=str(place.tzinfo))
+        s = astral_sun(loc.observer, date=d, tzinfo=place.tzinfo)
+        return s['sunrise'].strftime('%H:%M'), s['sunset'].strftime('%H:%M')
+    except Exception:
+        return None, None
 
 
 def _sidebar_row(label: str, value):
@@ -445,9 +465,27 @@ def _dialog():
                 else:
                     st.warning(f"⚠ No data for {_lbl_map.get(sid, sid)} in this date range.")
 
-        with st.spinner("Rendering…"):
-            fig = sfc.meteoplot(vrt=vrt)
-            st.pyplot(fig)
+        tab_meteo, tab_skewt = st.tabs(["🌤 Meteogram", "📡 Skew-T"])
+
+        with tab_meteo:
+            with st.spinner("Rendering…"):
+                fig = sfc.meteoplot(vrt=vrt)
+                st.pyplot(fig)
+
+        with tab_skewt:
+            if vrt is None or vrt.datos is None:
+                st.info(
+                    "Skew-T requires a single **forecast** model "
+                    "(not archive / station-only)."
+                )
+            else:
+                import matplotlib.pyplot as _plt
+                times = vrt.datos['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()
+                sel_time = st.select_slider("🕐 Hour", options=times)
+                with st.spinner("Rendering Skew-T…"):
+                    fig_st = vrt.skewt(sel_time)
+                    st.pyplot(fig_st)
+                    _plt.close(fig_st)
     except Exception as e:
         st.error(str(e))
 
@@ -462,6 +500,13 @@ with st.sidebar:
             st.info("🗺️ Search a location or click the map.")
         else:
             props = getattr(place, "properties", {}) or {}
+            _sr, _ss = _sunrise_sunset(place, date.today())
+            _sun_row = (
+                f'<div style="display:flex; justify-content:space-between;">'
+                f'<b>Sunrise / Sunset</b>'
+                f'<span>{_sr} / {_ss}</span></div>'
+                if _sr else ''
+            )
             st.markdown(f"""
             <div style="line-height:1.25; font-size:15px">
 
@@ -484,6 +529,8 @@ with st.sidebar:
             <div style="display:flex; justify-content:space-between;">
               <b>Timezone</b><span>{place.tzinfo} (UTC{place.delta_time:+d})</span>
             </div>
+
+            {_sun_row}
 
             <hr style="margin:6px 0; opacity:0.3">
 
