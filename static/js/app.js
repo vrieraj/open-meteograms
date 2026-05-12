@@ -473,8 +473,8 @@ function showModalImage(url) {
   const img = document.getElementById('meteogram-img');
   img.onload = () => {
     document.getElementById('modal-spinner').style.display = 'none';
-    if (_modalPayload) {
-      initZoomSliders(_modalPayload.date_start, _modalPayload.date_end);
+    if (_modalBaseRange) {
+      initZoomSliders(_modalBaseRange.date_start, _modalBaseRange.date_end);
       document.getElementById('meteo-zoom').classList.remove('hidden');
     }
   };

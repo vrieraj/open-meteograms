@@ -160,6 +160,17 @@ class MeteoVrt:
         """Fetch pressure-level data from Open-Meteo forecast model."""
         if model_name not in self.weather_models:
             raise ValueError(f"Unknown model: '{model_name}'")
+        if model_name == 'ERA5':
+            ds = fetch_era5_arco(
+                self.lat, self.lon, self.fechas[0], self.fechas[1],
+                levels=self.LEVELS_ALL,
+            )
+            self.dataset = ds
+            self.datos = self._dataset_to_legacy_wide(ds.df)
+            self.source_name = model_name
+            self._skewt_modelo = self.weather_models['ERA5']
+            self._skewt_fechas = self.fechas
+            return
         modelo = self.weather_models[model_name]
         data = fetch_vertical(self.lat, self.lon, self.elev,
                               self.tzinfo, self.fechas, modelo,
@@ -573,6 +584,9 @@ class MeteoVrt:
             col_wd = f'wind_direction_{level}hPa'
             T  = row[col_t]  if col_t  in row.index else np.nan
             rh = row[col_rh] if col_rh in row.index else np.nan
+            z_here = row.get(f'geopotential_height_{level}hPa', np.nan)
+            if np.isfinite(z_here) and z_here < self.elev:
+                continue
             if pd.isna(T) or pd.isna(rh):
                 continue
             e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
