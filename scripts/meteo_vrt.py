@@ -25,16 +25,18 @@ from datasources.openmeteo import fetch_vertical
 class MeteoVrt:
     """Vertical profile data and visualization."""
 
-    # 8 levels for data retrieval and BLH calculation
-    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700]
-
-    # 4 levels for barb display (less clutter)
+    # 4 levels for meteogram data pipeline, BLH calculation and barb display
+    LEVELS_ALL = [1000, 925, 850, 700]
     LEVELS_DISPLAY = [1000, 925, 850, 700]
+
+    # 10 levels for Skew-T (fetched on demand, separate from meteogram data)
+    LEVELS_SKEWT = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500]
 
     # Approximate altitudes (m ASL)
     ALTITUDES = {
         1000: 110, 975: 320, 950: 500, 925: 800,
-        900: 1000, 850: 1500, 800: 1900, 700: 3000
+        900: 1000, 850: 1500, 800: 1900, 700: 3000,
+        600: 4200, 500: 5600,
     }
 
     def __init__(self, place, fechas: list[str]):
@@ -52,6 +54,9 @@ class MeteoVrt:
         self.fechas = fechas
         self.datos = None
         self.source_name = None
+        self._datos_skewt = None    # lazy-loaded on first skewt() call
+        self._skewt_modelo = None   # model dict used for Skew-T fetch
+        self._skewt_fechas = None   # date range used for Skew-T fetch
         self.weather_models = WEATHER_MODELS.copy()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -100,6 +105,8 @@ class MeteoVrt:
         if data is None:
             return
         self._process_response(data, model_name)
+        self._skewt_modelo = modelo
+        self._skewt_fechas = self.fechas
 
     def _fetch_era5_year(self, year: int):
         """Fetch ERA5 pressure-level data for a year, shift to current year."""
@@ -116,9 +123,10 @@ class MeteoVrt:
         if data is None:
             return
         self._process_response(data, str(year))
-        # Shift dates to current year
         delta = int(year_now) - year
         self.datos['time'] = self.datos['time'] + pd.DateOffset(years=delta)
+        self._skewt_modelo = self.weather_models['ERA5']
+        self._skewt_fechas = fechas_era5
 
     def _process_response(self, data: dict, source_name: str):
         """Transform raw API response into processed DataFrame."""
@@ -398,19 +406,172 @@ class MeteoVrt:
         if handles:
             ax.legend(loc='upper right', fontsize=7, ncol=2).set_zorder(10)
 
-    # ── Skew-T (placeholder) ─────────────────────────────────────────────
+    # ── Skew-T ───────────────────────────────────────────────────────────
 
-    def skewt(self, time: str):
+    def _fetch_skewt_data(self):
+        """Fetch extended pressure levels (LEVELS_SKEWT) for Skew-T on demand."""
+        if self._skewt_modelo is None:
+            raise ValueError("Call get_data() first.")
+        data = fetch_vertical(self.lat, self.lon, self.elev,
+                              self.tzinfo, self._skewt_fechas, self._skewt_modelo,
+                              self.LEVELS_SKEWT)
+        if data is None:
+            self._datos_skewt = self.datos
+            return
+        df = pd.DataFrame(data['hourly'])
+        df['time'] = pd.to_datetime(df['time'])
+        for level in self.LEVELS_SKEWT:
+            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction']:
+                col = f'{var}_{level}hPa'
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+        self._datos_skewt = df
+
+    def _skewt_arrays(self, time: str):
+        """
+        Extract profile arrays from _datos_skewt for a given time.
+        Returns (actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals).
+        """
+        if self._datos_skewt is None:
+            self._fetch_skewt_data()
+        t = pd.to_datetime(time)
+        idx = (self._datos_skewt['time'] - t).abs().idxmin()
+        row = self._datos_skewt.loc[idx]
+        actual_time = self._datos_skewt.loc[idx, 'time']
+
+        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
+        for level in sorted(self.LEVELS_SKEWT, reverse=True):
+            col_t  = f'temperature_{level}hPa'
+            col_rh = f'relative_humidity_{level}hPa'
+            col_ws = f'wind_speed_{level}hPa'
+            col_wd = f'wind_direction_{level}hPa'
+            T  = row[col_t]  if col_t  in row.index else np.nan
+            rh = row[col_rh] if col_rh in row.index else np.nan
+            if pd.isna(T) or pd.isna(rh):
+                continue
+            e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
+            e   = (rh / 100.0) * e_s
+            Td  = 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
+            ws  = row[col_ws] if col_ws in row.index else np.nan
+            wd  = row[col_wd] if col_wd in row.index else np.nan
+            ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
+            u = (-ws_kt * np.sin(np.radians(wd))
+                 if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
+            v = (-ws_kt * np.cos(np.radians(wd))
+                 if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
+            pressure_vals.append(level)
+            temp_vals.append(T)
+            dewp_vals.append(Td)
+            u_vals.append(u)
+            v_vals.append(v)
+        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals
+
+    def compute_skewt_indices(self, time: str) -> dict:
+        """
+        Compute thermodynamic indices for a single time step.
+
+        Returns dict with keys: cape, cin, lcl_hpa, lcl_temp, trigger_temp.
+        All temperatures in °C, pressures in hPa, energy in J/kg.
+        Returns {} on any error.
+        """
+        try:
+            import metpy.calc as mpcalc
+            from metpy.units import units as munits
+        except ImportError:
+            return {}
+        try:
+            _, pv, tv, tdv, _, _ = self._skewt_arrays(time)
+            if len(pv) < 3:
+                return {}
+            p     = np.array(pv) * munits.hPa
+            T_arr = np.array(tv) * munits.degC
+            Td_arr= np.array(tdv) * munits.degC
+
+            # LCL
+            p_lcl, T_lcl = mpcalc.lcl(p[0], T_arr[0], Td_arr[0])
+
+            # CAPE / CIN
+            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr)
+
+            # Trigger temperature via CCL
+            trigger_temp = None
+            try:
+                p_ccl, T_ccl = mpcalc.ccl(p, T_arr, Td_arr)[:2]
+                T_trigger = mpcalc.dry_lapse(
+                    np.atleast_1d(p[0]), T_ccl, reference_pressure=p_ccl
+                )[0]
+                trigger_temp = float(T_trigger.to('degC').magnitude)
+            except Exception:
+                pass
+
+            return {
+                'cape':         round(float(cape.magnitude), 1),
+                'cin':          round(float(cin.magnitude), 1),
+                'lcl_hpa':      round(float(p_lcl.magnitude), 1),
+                'lcl_temp':     round(float(T_lcl.to('degC').magnitude), 1),
+                'trigger_temp': round(trigger_temp, 1) if trigger_temp is not None else None,
+            }
+        except Exception:
+            return {}
+
+    def skewt(self, time: str) -> plt.Figure:
         """
         Plot Skew-T log-P diagram for a single time step.
 
         Parameters
         ----------
-        time : str — 'YYYY-MM-DD HH:MM' timestamp
+        time : str — 'YYYY-MM-DD HH:MM' timestamp (nearest match used)
 
-        TODO: Implement with MetPy SkewT using all 8 pressure levels.
+        Returns
+        -------
+        matplotlib.Figure
         """
-        raise NotImplementedError(
-            "Skew-T plotting will be implemented with MetPy. "
-            "Requires: pip install metpy"
+        try:
+            from metpy.plots import SkewT
+            from metpy.units import units as munits
+        except ImportError:
+            raise ImportError("MetPy is required for Skew-T: pip install metpy")
+
+        if self.datos is None:
+            raise ValueError("No vertical data. Call get_data() first.")
+
+        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = \
+            self._skewt_arrays(time)
+
+        if not pressure_vals:
+            raise ValueError("No valid data for the selected time step.")
+
+        p = np.array(pressure_vals) * munits.hPa
+        T_arr = np.array(temp_vals) * munits.degC
+        Td_arr = np.array(dewp_vals) * munits.degC
+        u_arr = np.array(u_vals) * munits.knots
+        v_arr = np.array(v_vals) * munits.knots
+
+        fig = plt.figure(figsize=(8, 9))
+        skew = SkewT(fig, rotation=45)
+
+        skew.plot(p, T_arr, 'r', linewidth=2, label='Temperature')
+        skew.plot(p, Td_arr, 'g', linewidth=2, label='Dewpoint')
+
+        valid_wind = np.isfinite(u_arr.magnitude) & np.isfinite(v_arr.magnitude)
+        if valid_wind.any():
+            skew.plot_barbs(p[valid_wind], u_arr[valid_wind], v_arr[valid_wind])
+
+        skew.plot_dry_adiabats(alpha=0.25, linewidths=0.7)
+        skew.plot_moist_adiabats(alpha=0.25, linewidths=0.7)
+        skew.plot_mixing_lines(alpha=0.2, linewidths=0.7)
+
+        skew.ax.set_ylim(1050, min(pressure_vals) - 10)
+        skew.ax.set_xlim(-30, 45)
+        skew.ax.set_xlabel('Temperature (°C)')
+        skew.ax.set_ylabel('Pressure (hPa)')
+
+        time_label = actual_time.strftime('%Y-%m-%d %H:%M UTC') \
+            if hasattr(actual_time, 'strftime') else str(actual_time)
+        skew.ax.set_title(
+            f'Skew-T Log-P — {self.source_name} | {self.name}\n{time_label}',
+            fontsize=10, fontweight='bold',
         )
+        skew.ax.legend(loc='upper left', fontsize=8)
+        fig.tight_layout()
+        return fig
