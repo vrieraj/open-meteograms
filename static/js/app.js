@@ -1,4 +1,4 @@
-/* ── WEATHER MODELS ───────────────────────────────────────────── */
+/* ── WEATHER MODELS ───────────────────────────────────────────────────── */
 const WEATHER_MODELS = {
   'ICON':       { provider: 'DWD (Germany)',          type: 'forecast', resolution: '2–11 km' },
   'GFS':        { provider: 'NOAA (USA)',              type: 'forecast', resolution: '3–25 km' },
@@ -17,7 +17,7 @@ const WEATHER_MODELS = {
   'ERA5':       { provider: 'ECMWF',                   type: 'archive',  resolution: '11 km' },
 };
 
-/* ── STATE ──────────────────────────────────────────────────────────── */
+/* ── STATE ──────────────────────────────────────────────────────────────────── */
 const state = {
   place: null,
   stations: [],
@@ -25,7 +25,7 @@ const state = {
   geojsonLayers: [],
 };
 
-/* ── MAP ─────────────────────────────────────────────────────────────── */
+/* ── MAP ─────────────────────────────────────────────────────────────────────────── */
 const TILES = {
   map:        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                 { attribution: '© CartoDB', maxZoom: 19 }),
@@ -60,7 +60,7 @@ function switchBasemap(name) {
 document.querySelectorAll('.basemap-btn').forEach(btn =>
   btn.addEventListener('click', () => switchBasemap(btn.dataset.basemap)));
 
-/* ── SEARCH ────────────────────────────────────────────────────────────── */
+/* ── SEARCH ────────────────────────────────────────────────────────────────────────── */
 let searchTimeout = null;
 const searchInput    = document.getElementById('search-input');
 const searchDropdown = document.getElementById('search-dropdown');
@@ -116,7 +116,7 @@ async function selectResult(r) {
   map.setView([r.lat, r.lon], 12);
 }
 
-/* ── MAP CLICK ──────────────────────────────────────────────────────────── */
+/* ── MAP CLICK ──────────────────────────────────────────────────────────────────────── */
 map.on('click', async (e) => {
   const { lat, lng } = e.latlng;
   try {
@@ -131,7 +131,7 @@ map.on('click', async (e) => {
   } catch {}
 });
 
-/* ── PLACE ────────────────────────────────────────────────────────────── */
+/* ── PLACE ────────────────────────────────────────────────────────────────────────── */
 async function loadPlace(lat, lon, name) {
   try {
     const res   = await fetch(`/api/place?lat=${lat}&lon=${lon}&name=${encodeURIComponent(name)}`);
@@ -146,8 +146,9 @@ async function loadPlace(lat, lon, name) {
 }
 
 function renderLocationPanel(p) {
-  const sunRow = (p.sunrise && p.sunset)
-    ? `<tr><td>Sunrise/Sunset</td><td>${p.sunrise} / ${p.sunset}</td></tr>`
+  const sunRows = (p.sunrise && p.sunset)
+    ? `<tr><td>Sunrise</td><td>${p.sunrise}</td></tr>
+       <tr><td>Sunset</td><td>${p.sunset}</td></tr>`
     : '';
   document.getElementById('location-content').innerHTML = `
     <table class="info-table">
@@ -156,7 +157,7 @@ function renderLocationPanel(p) {
       <tr><td>Lon</td><td>${p.lon.toFixed(4)}°</td></tr>
       <tr><td>Elevation</td><td>${p.elev ?? 'N/A'} m</td></tr>
       <tr><td>Timezone</td><td>${escHtml(p.tz)} (UTC${p.delta_time >= 0 ? '+' : ''}${p.delta_time})</td></tr>
-      ${sunRow}
+      ${sunRows}
     </table>
     <div class="ext-links">
       <a href="${p.map}" target="_blank">Maps</a>
@@ -165,7 +166,7 @@ function renderLocationPanel(p) {
     </div>`;
 }
 
-/* ── STATIONS ────────────────────────────────────────────────────────────── */
+/* ── STATIONS ────────────────────────────────────────────────────────────────────────── */
 document.getElementById('radius-slider').addEventListener('input', function () {
   document.getElementById('radius-val').textContent = this.value;
 });
@@ -260,7 +261,7 @@ function renderStationsList() {
   });
 }
 
-/* ── GEOJSON LAYERS ──────────────────────────────────────────────────────────── */
+/* ── GEOJSON LAYERS ────────────────────────────────────────────────────────────────────────── */
 document.getElementById('geojson-upload').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -306,7 +307,7 @@ function renderLayersList() {
   });
 }
 
-/* ── MODELS ────────────────────────────────────────────────────────────── */
+/* ── MODELS ────────────────────────────────────────────────────────────────────────── */
 function initModelSelects() {
   const container = document.getElementById('models-selects');
   Object.keys(WEATHER_MODELS).forEach((_, i) => {
@@ -339,7 +340,7 @@ function getSelectedModels() {
   )];
 }
 
-/* ── DATES ────────────────────────────────────────────────────────────── */
+/* ── DATES ────────────────────────────────────────────────────────────────────────── */
 function initDates() {
   const today = new Date();
   const end   = new Date(today);
@@ -373,7 +374,7 @@ function validateDates() {
   }
 }
 
-/* ── COLLAPSIBLES ──────────────────────────────────────────────────────────── */
+/* ── COLLAPSIBLES ──────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById(btn.dataset.target).classList.toggle('collapsed');
@@ -381,7 +382,7 @@ document.querySelectorAll('.panel-title.collapsible').forEach(btn => {
   });
 });
 
-/* ── GENERATE ────────────────────────────────────────────────────────────── */
+/* ── GENERATE ────────────────────────────────────────────────────────────────────────── */
 function updateGenerateBtn() {
   const disabled = !state.place || getSelectedModels().length === 0;
   document.getElementById('generate-btn').disabled = disabled;
@@ -426,7 +427,7 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
   }
 });
 
-/* ── MODAL ────────────────────────────────────────────────────────────── */
+/* ── MODAL ────────────────────────────────────────────────────────────────────────── */
 function openModal(name, start, end, models) {
   document.getElementById('modal-title').textContent = `${name} — ${start} → ${end}`;
 
@@ -443,6 +444,12 @@ function openModal(name, start, end, models) {
   document.getElementById('skewt-error').classList.add('hidden');
   document.getElementById('skewt-time-row').classList.add('hidden');
   initSkewtModelSel(models || []);
+
+  // Preload Skew-T data in background while user reads meteogram
+  setTimeout(() => {
+    const model = document.getElementById('skewt-model-sel').value;
+    if (model && WEATHER_MODELS[model]) loadSkewt();
+  }, 0);
 
   // Activate Meteogram tab by default
   document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
@@ -520,7 +527,7 @@ document.getElementById('modal-close').addEventListener('click', () =>
 document.getElementById('modal-backdrop').addEventListener('click', () =>
   document.getElementById('modal').classList.add('hidden'));
 
-/* ── MODAL TABS ──────────────────────────────────────────────────────────── */
+/* ── MODAL TABS ──────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.modal-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
@@ -531,7 +538,7 @@ document.querySelectorAll('.modal-tab').forEach(btn => {
   });
 });
 
-/* ── SKEW-T ────────────────────────────────────────────────────────────── */
+/* ── SKEW-T ────────────────────────────────────────────────────────────────────────── */
 const skewtState = { loaded: false, times: [] };
 
 function initSkewtModelSel(models) {
@@ -550,7 +557,32 @@ document.getElementById('skewt-model-sel').addEventListener('change', () => {
 
 document.getElementById('skewt-hour-sel').addEventListener('change', function () {
   fetchSkewtTime(this.value);
+  updateNavArrows();
 });
+
+document.getElementById('skewt-prev').addEventListener('click', () => {
+  const sel = document.getElementById('skewt-hour-sel');
+  if (sel.selectedIndex > 0) {
+    sel.selectedIndex--;
+    fetchSkewtTime(sel.value);
+    updateNavArrows();
+  }
+});
+
+document.getElementById('skewt-next').addEventListener('click', () => {
+  const sel = document.getElementById('skewt-hour-sel');
+  if (sel.selectedIndex < sel.options.length - 1) {
+    sel.selectedIndex++;
+    fetchSkewtTime(sel.value);
+    updateNavArrows();
+  }
+});
+
+function updateNavArrows() {
+  const sel = document.getElementById('skewt-hour-sel');
+  document.getElementById('skewt-prev').disabled = sel.selectedIndex <= 0;
+  document.getElementById('skewt-next').disabled = sel.selectedIndex >= sel.options.length - 1;
+}
 
 async function loadSkewt() {
   const model = document.getElementById('skewt-model-sel').value;
@@ -646,12 +678,12 @@ function showSkewtError(msg) {
   el.classList.remove('hidden');
 }
 
-/* ── UTILS ────────────────────────────────────────────────────────────── */
+/* ── UTILS ────────────────────────────────────────────────────────────────────────── */
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── INIT ────────────────────────────────────────────────────────────── */
+/* ── INIT ────────────────────────────────────────────────────────────────────────── */
 initModelSelects();
 initDates();
 

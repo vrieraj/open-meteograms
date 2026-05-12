@@ -84,8 +84,8 @@ def place():
                                timezone=str(p.tzinfo))
             s = astral_sun(loc.observer, date=_date.today(),
                            tzinfo=pytz.timezone(str(p.tzinfo)))
-            sr = s['sunrise'].strftime('%H:%M')
-            ss = s['sunset'].strftime('%H:%M')
+            sr = s['sunrise'].strftime('%H:%M') + ' h'
+            ss = s['sunset'].strftime('%H:%M') + ' h'
         except Exception:
             pass
         return jsonify({

@@ -98,11 +98,13 @@
     <div id="modal-content">
       <div id="modal-header">
         <span id="modal-title">Meteogram</span>
-        <div id="modal-tabs">
-          <button class="modal-tab active" data-tab="tab-meteo">🌤 Meteogram</button>
-          <button class="modal-tab" data-tab="tab-skewt">📡 Skew-T</button>
+        <div id="modal-header-right">
+          <div id="modal-tabs">
+            <button class="modal-tab active" data-tab="tab-meteo">🌤 Meteogram</button>
+            <button class="modal-tab" data-tab="tab-skewt">📡 Skew-T</button>
+          </div>
+          <button id="modal-close">✕</button>
         </div>
-        <button id="modal-close">✕</button>
       </div>
       <div id="modal-body">
         <!-- Meteogram panel -->
@@ -120,7 +122,9 @@
             </div>
             <div class="ctrl-row hidden" id="skewt-time-row">
               <label>Hour</label>
+              <button id="skewt-prev" class="nav-arrow" title="Previous">◄</button>
               <select id="skewt-hour-sel"></select>
+              <button id="skewt-next" class="nav-arrow" title="Next">►</button>
             </div>
           </div>
           <div id="skewt-spinner" class="hidden">⏳ Loading Skew-T…</div>

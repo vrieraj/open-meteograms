@@ -428,6 +428,7 @@ button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 /* ── MODAL TABS ── */
+#modal-header-right { display: flex; align-items: center; gap: 10px; }
 #modal-tabs { display: flex; gap: 4px; }
 
 .modal-tab {
@@ -511,3 +512,18 @@ button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 #skewt-error { color: #ff6b6b; padding: 24px; font-size: 13px; text-align: center; }
 #skewt-error.hidden { display: none; }
+
+.nav-arrow {
+  background: #2a2a3e;
+  border: 1px solid #3a3a5e;
+  border-radius: 4px;
+  color: #d0d0ee;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.nav-arrow:hover:not(:disabled) { background: #3a3a5e; }
+.nav-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
