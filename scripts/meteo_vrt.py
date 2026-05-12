@@ -25,11 +25,14 @@ from datasources.openmeteo import fetch_vertical
 class MeteoVrt:
     """Vertical profile data and visualization."""
 
-    # Levels for data retrieval, BLH calculation, and Skew-T
-    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500]
+    # 8 levels for meteogram data pipeline and BLH calculation
+    LEVELS_ALL = [1000, 975, 950, 925, 900, 850, 800, 700]
 
     # 4 levels for barb display in time-height cross section (less clutter)
     LEVELS_DISPLAY = [1000, 925, 850, 700]
+
+    # 10 levels for Skew-T (fetched on demand, separate from meteogram data)
+    LEVELS_SKEWT = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500]
 
     # Approximate altitudes (m ASL)
     ALTITUDES = {
@@ -53,6 +56,7 @@ class MeteoVrt:
         self.fechas = fechas
         self.datos = None
         self.source_name = None
+        self._datos_skewt = None   # lazy-loaded on first skewt() call
         self.weather_models = WEATHER_MODELS.copy()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -401,6 +405,28 @@ class MeteoVrt:
 
     # ── Skew-T ───────────────────────────────────────────────────────────
 
+    def _fetch_skewt_data(self):
+        """Fetch extended pressure levels (LEVELS_SKEWT) for Skew-T on demand."""
+        if self.source_name is None:
+            raise ValueError("Call get_data() first.")
+        modelo = self.weather_models.get(self.source_name)
+        if modelo is None:
+            raise ValueError(f"Skew-T fetch not supported for source '{self.source_name}'")
+        data = fetch_vertical(self.lat, self.lon, self.elev,
+                              self.tzinfo, self.fechas, modelo,
+                              self.LEVELS_SKEWT)
+        if data is None:
+            self._datos_skewt = self.datos
+            return
+        df = pd.DataFrame(data['hourly'])
+        df['time'] = pd.to_datetime(df['time'])
+        for level in self.LEVELS_SKEWT:
+            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction']:
+                col = f'{var}_{level}hPa'
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+        self._datos_skewt = df
+
     def skewt(self, time: str) -> plt.Figure:
         """
         Plot Skew-T log-P diagram for a single time step.
@@ -422,14 +448,18 @@ class MeteoVrt:
         if self.datos is None:
             raise ValueError("No vertical data. Call get_data() first.")
 
+        # Lazy-fetch extended levels (600, 500 hPa) on first call
+        if self._datos_skewt is None:
+            self._fetch_skewt_data()
+
         t = pd.to_datetime(time)
-        idx = (self.datos['time'] - t).abs().idxmin()
-        row = self.datos.loc[idx]
-        actual_time = self.datos.loc[idx, 'time']
+        idx = (self._datos_skewt['time'] - t).abs().idxmin()
+        row = self._datos_skewt.loc[idx]
+        actual_time = self._datos_skewt.loc[idx, 'time']
 
         pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
 
-        for level in sorted(self.LEVELS_ALL, reverse=True):  # surface → upper
+        for level in sorted(self.LEVELS_SKEWT, reverse=True):  # surface → upper
             col_t = f'temperature_{level}hPa'
             col_rh = f'relative_humidity_{level}hPa'
             col_ws = f'wind_speed_{level}hPa'
