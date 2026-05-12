@@ -98,12 +98,38 @@
     <div id="modal-content">
       <div id="modal-header">
         <span id="modal-title">Meteogram</span>
+        <div id="modal-tabs">
+          <button class="modal-tab active" data-tab="tab-meteo">🌤 Meteogram</button>
+          <button class="modal-tab" data-tab="tab-skewt">📡 Skew-T</button>
+        </div>
         <button id="modal-close">✕</button>
       </div>
       <div id="modal-body">
-        <div id="modal-spinner">Generating meteogram…</div>
-        <img id="meteogram-img" class="hidden" alt="Meteogram">
-        <div id="modal-error" class="hidden"></div>
+        <!-- Meteogram panel -->
+        <div id="tab-meteo" class="tab-panel">
+          <div id="modal-spinner">Generating meteogram…</div>
+          <img id="meteogram-img" class="hidden" alt="Meteogram">
+          <div id="modal-error" class="hidden"></div>
+        </div>
+        <!-- Skew-T panel -->
+        <div id="tab-skewt" class="tab-panel hidden">
+          <div id="skewt-controls">
+            <div class="ctrl-row">
+              <label>Model</label>
+              <select id="skewt-model-sel"></select>
+            </div>
+            <div class="ctrl-row hidden" id="skewt-time-row">
+              <label>Hour</label>
+              <select id="skewt-hour-sel"></select>
+            </div>
+          </div>
+          <div id="skewt-spinner" class="hidden">⏳ Loading Skew-T…</div>
+          <div id="skewt-main" class="hidden">
+            <img id="skewt-img" alt="Skew-T">
+            <div id="skewt-indices"></div>
+          </div>
+          <div id="skewt-error" class="hidden"></div>
+        </div>
       </div>
     </div>
   </div>

@@ -427,6 +427,26 @@ button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
   flex: 1;
 }
 
+/* ── MODAL TABS ── */
+#modal-tabs { display: flex; gap: 4px; }
+
+.modal-tab {
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid #3a3a5e;
+  border-radius: 6px;
+  color: #8080a8;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.modal-tab.active { background: #2c6be4; border-color: #2c6be4; color: #fff; }
+.modal-tab:hover:not(.active) { background: #2a2a3e; color: #d0d0ee; }
+
+.tab-panel { width: 100%; }
+.tab-panel.hidden { display: none; }
+
 #modal-spinner { color: #8080a8; padding: 48px; font-size: 14px; }
 
 #meteogram-img { max-width: 100%; border-radius: 8px; }
@@ -434,3 +454,60 @@ button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 #modal-error { color: #ff6b6b; padding: 24px; font-size: 13px; }
 #modal-error.hidden { display: none; }
+
+/* ── SKEW-T ── */
+#skewt-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ctrl-row { display: flex; align-items: center; gap: 8px; }
+.ctrl-row.hidden { display: none; }
+
+.ctrl-row label { font-size: 12px; color: #8080a8; white-space: nowrap; }
+
+.ctrl-row select {
+  padding: 5px 8px;
+  background: #2a2a3e;
+  border: 1px solid #3a3a5e;
+  border-radius: 6px;
+  color: #d0d0ee;
+  font-size: 12px;
+  max-width: 220px;
+}
+
+#skewt-spinner { color: #8080a8; padding: 32px; font-size: 13px; text-align: center; }
+#skewt-spinner.hidden { display: none; }
+
+#skewt-main { display: flex; gap: 16px; align-items: flex-start; }
+#skewt-main.hidden { display: none; }
+
+#skewt-img { flex: 1; max-width: calc(100% - 148px); border-radius: 8px; }
+
+#skewt-indices {
+  width: 132px;
+  flex-shrink: 0;
+  background: #252535;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.idx-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8080a8;
+  margin-bottom: 10px;
+}
+
+.idx-row { margin-bottom: 10px; }
+.idx-label { font-size: 10px; color: #6060a0; text-transform: uppercase; letter-spacing: 0.4px; display: block; }
+.idx-value { font-size: 15px; font-weight: 600; color: #d0d0ee; }
+.idx-unit  { font-size: 10px; color: #606080; }
+
+#skewt-error { color: #ff6b6b; padding: 24px; font-size: 13px; text-align: center; }
+#skewt-error.hidden { display: none; }
