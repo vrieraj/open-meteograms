@@ -102,6 +102,11 @@ fig = sfc.meteoplot(vrt=vrt)   # returns matplotlib.Figure
 - **Vector layers (`geojson_layers`)**: `st.session_state.geojson_layers` is a `list[dict]` where each entry holds `{name, data, color, visible, n_feat}`. Managed via the "📂 Vector layers" section always visible in the sidebar (above the date range, outside the `if place:` block). Accepts GeoJSON `FeatureCollection` or bare `Feature` objects (auto-wrapped). Layers are rendered in `_build_map()` via `folium.GeoJson` with fill at 25% opacity and stroke at 85%. `_geojson_name_field()` scans the first 10 features for a `name`/`label`/`nombre`/`titulo` property and wires a tooltip if found. `folium.LayerControl` is added to the map only when at least one layer is visible. Layers always render (no visibility toggle); deleted with ✕ button. Duplicates (same filename) are silently skipped. Persist for the session only (no disk persistence).
 - **X-axis tick hierarchy**: for ≤4-day ranges the bottom axis uses `DayLocator` (major, `%b %d`, normal size) + `HourLocator` (minor, `%H:%M`, `labelsize=7`) so days visually outweigh hours. For >4 days only `DayLocator` with `%b-%d` is used. All panels (including wind direction) get dotted minor grid lines (`alpha=0.15`, `linestyle=':'`) in the ≤4-day case.
 - **`skewt()` is unimplemented**: `MeteoVrt.skewt()` raises `NotImplementedError`; placeholder for future MetPy integration.
+- **Flask viewer** (`api/`): canonical web interface replacing the Streamlit `app.py`. Entry point is `api/app.py`; blueprints in `api/routes/` (`search`, `meteogram`, `stations`). Static files served from `static/` (Leaflet map, sidebar, modal).
+- **`matplotlib.use('Agg')` in `api/app.py`**: must be called immediately after `sys.path.insert` and before any Flask or script imports; prevents Tkinter crash (`RuntimeError: main thread is not in main loop`) when matplotlib is used from Flask worker threads.
+- **Meteogram modal tabs**: Meteogram and Skew-T tabs are right-aligned in `#modal-header-right`. The Skew-T tab preloads data in background via `setTimeout(() => loadSkewt(), 0)` when the modal opens; a `skewtState.loading` boolean guard prevents double-fetch if the user clicks the tab before the preload resolves.
+- **Dual range zoom slider** (`#meteo-zoom`): appears below the meteogram image after it loads. Two overlapping `<input type="range">` with `pointer-events: none` on the element and `pointer-events: all` on the thumb pseudo-element. A `<div id="dual-range-fill">` tracks the selected range. Minimum gap of 2 days enforced. "Actualizar" button re-fetches `/api/meteogram` with the narrowed `date_start`/`date_end` stored in `_modalPayload`; on success `showModalImage` reinitializes the sliders to the new (narrower) range.
+- **`/api/skewt` endpoint** (`api/routes/meteogram.py`): POST, accepts `{lat, lon, name, model, date_start, date_end, time?}`. Returns `{times, time, image: "data:image/png;base64,...", indices: {cape, cin, lcl_hpa, lcl_temp, trigger_temp}}`. When `time` is omitted, returns the first available timestamp and the full `times` list.
 
 ### Available weather models (`WEATHER_MODELS` keys)
 
@@ -150,3 +155,12 @@ fig = sfc.meteoplot(vrt=vrt)   # returns matplotlib.Figure
 - **VPD FM** (Resco de Dios 2015/2024): `FM = 3.5 + 28 * exp(-1.5 * VPD_kPa)`. Not computed for station sources (no VPD available).
 - **Ignition probability**: 9×16 lookup table indexed by temperature (5°C bins) × fuel moisture.
 - The ignition semaphore is a colored bar at the bottom of the fuel panel using the first source in `datos_ref`.
+
+## Pending / Backlog
+
+- **Zoom slider bug**: al hacer zoom el slider reinicia con el rango acotado como nuevo rango completo; debería mantener el rango original como referencia para poder deshacer el zoom o ampliar en otra zona sin tener que regenerar desde el sidebar.
+- **Meteograma — índice de inestabilidad**: valorar agregar una barra de color (Haines index o CAPE) al meteograma de superficie, posiblemente como banda coloreada en el panel superior o en el panel de combustible.
+- **Meteograma — precipitación**: valorar introducir un subplot de precipitación entre el panel de temperatura y el de humedad del combustible (actualmente hay un panel de temperatura/RH y luego el panel FUEL; la precipitación iría en medio).
+- **Skew-T — índices**: `trigger_temp` y otros índices termodinámicos (Lifted Index, K-index, Showalter) no están calculados en `api/routes/meteogram.py`; el endpoint devuelve `None` para `trigger_temp`.
+- **Skew-T — precarga**: la precarga en background (`setTimeout`) no funciona correctamente; el componente aparece con todos los días y horas del rango en lugar de mostrar sólo el instante más cercano al momento actual.
+- **Migración a Plotly/JavaScript**: valorar reemplazar matplotlib por Plotly para obtener gráficos interactivos en el navegador (zoom nativo, hover, pan) sin necesidad de regenerar imágenes en el servidor.
