@@ -100,31 +100,6 @@ def excel():
     if missing:
         return jsonify({'error': f'Missing: {", ".join(missing)}'}), 400
 
-    try:
-        _, sfc = _build_sfc(data)
-
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-            for src in sfc.datos['source'].unique():
-                label = sfc.station_names.get(src, src)
-                sheet = label[:31]
-                df_src = sfc.datos[sfc.datos['source'] == src].copy()
-                cols = [c for c in COL_ORDER if c in df_src.columns]
-                df_src[cols].to_excel(writer, sheet_name=sheet, index=False)
-        buf.seek(0)
-
-        filename = f"meteogram_{data['name']}_{data['date_start']}.xlsx"
-        return send_file(
-            buf,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename,
-        )
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 @bp.route('/skewt', methods=['POST'])
 def skewt():
     data = request.get_json()
@@ -173,13 +148,5 @@ def skewt():
         buf.seek(0)
         img_b64 = base64.b64encode(buf.read()).decode()
         plt.close(fig)
-
-        return jsonify({
-            'times': times,
-            'time': time,
-            'image': f'data:image/png;base64,{img_b64}',
-            'indices': indices,
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except:
+        pass
