@@ -20,12 +20,18 @@ def fetch_era5_arco(lat, lon, start_date, end_date, levels=None, variables=None)
     variables = variables or [
         'temperature',
         'relative_humidity',
+        'specific_humidity',
         'u_component_of_wind',
         'v_component_of_wind',
         'geopotential',
     ]
 
-    ds = xr.open_zarr(ARCO_DATASET, consolidated=False)
+    # Public bucket: force anonymous access to avoid requiring local GCP ADC
+    ds = xr.open_zarr(
+        ARCO_DATASET,
+        consolidated=False,
+        storage_options={'token': 'anon'},
+    )
     sub = ds[variables].sel(
         latitude=lat,
         longitude=lon,
@@ -38,6 +44,20 @@ def fetch_era5_arco(lat, lon, start_date, end_date, levels=None, variables=None)
     df = sub.to_dataframe().reset_index().rename(columns={'level': 'pressure'})
     df['temperature'] = df['temperature'] - 273.15
     df['geopotential_height'] = df['geopotential'] / 9.80665
+
+    # Some ARCO slices expose specific_humidity but not relative_humidity.
+    # Backfill RH (%) from q, T and p when needed.
+    if 'relative_humidity' not in df.columns:
+        if 'specific_humidity' not in df.columns:
+            raise KeyError("ARCO dataset is missing both 'relative_humidity' and 'specific_humidity'")
+        p = pd.to_numeric(df['pressure'], errors='coerce') * 100.0  # hPa -> Pa
+        q = pd.to_numeric(df['specific_humidity'], errors='coerce')
+        # vapor pressure from specific humidity
+        e = (q * p) / np.clip(0.622 + 0.378 * q, 1e-9, None)
+        # saturation vapor pressure (Pa), Bolton (1980)
+        es = 611.2 * np.exp((17.67 * df['temperature']) / (df['temperature'] + 243.5))
+        rh = 100.0 * e / np.clip(es, 1e-9, None)
+        df['relative_humidity'] = np.clip(rh, 0.0, 100.0)
 
     ws = np.hypot(df['u_component_of_wind'], df['v_component_of_wind'])
     df['wind_speed'] = ws
