@@ -1,6 +1,7 @@
 import io
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
+from datetime import date
 
 bp = Blueprint('meteogram', __name__, url_prefix='/api')
 
@@ -30,7 +31,7 @@ def _build_sfc(data):
     from scripts.meteo_sfc import MeteoSfc
 
     place = Place(_build_place_feature(data))
-    fechas = [data['date_start'], data['date_end']]
+    fechas = _normalized_dates(data['date_start'], data['date_end'], data.get('models', []))
     sfc = MeteoSfc(place, fechas)
     sfc.get_data('openmeteo', models=data['models'])
 
@@ -44,6 +45,14 @@ def _build_sfc(data):
             sfc.get_data_station(df, label=s.get('label', s['id']))
 
     return place, sfc
+
+
+def _normalized_dates(date_start: str, date_end: str, models: list[str]) -> list[str]:
+    today = date.today().isoformat()
+    from scripts.weather_models import WEATHER_MODELS
+    if any(WEATHER_MODELS.get(m, {}).get('type') == 'archive' for m in models):
+        return [min(date_start, today), min(date_end, today)]
+    return [date_start, date_end]
 
 
 @bp.route('/meteogram', methods=['POST'])
@@ -61,12 +70,11 @@ def meteogram():
         from scripts.weather_models import WEATHER_MODELS
 
         place, sfc = _build_sfc(data)
-        fechas = [data['date_start'], data['date_end']]
         models = data['models']
+        fechas = _normalized_dates(data['date_start'], data['date_end'], models)
 
         vrt = None
-        if (len(models) == 1
-                and WEATHER_MODELS.get(models[0], {}).get('type') == 'forecast'):
+        if len(models) == 1 and WEATHER_MODELS.get(models[0], {}).get('type') in ('forecast', 'archive'):
             vrt = MeteoVrt(place, fechas)
             vrt.get_data('openmeteo', model=models[0])
 
@@ -139,7 +147,7 @@ def skewt():
             return jsonify({'error': f'Unknown model: {model}'}), 400
 
         place = Place(_build_place_feature(data))
-        fechas = [data['date_start'], data['date_end']]
+        fechas = _normalized_dates(data['date_start'], data['date_end'], [model])
         time = data.get('time')
 
         vrt = MeteoVrt(place, fechas)
