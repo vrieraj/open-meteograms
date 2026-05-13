@@ -1,6 +1,7 @@
 import io
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
+from datetime import date
 
 bp = Blueprint('meteogram', __name__, url_prefix='/api')
 
@@ -31,6 +32,10 @@ def _build_sfc(data):
 
     place = Place(_build_place_feature(data))
     fechas = [data['date_start'], data['date_end']]
+    today = date.today().isoformat()
+    from scripts.weather_models import WEATHER_MODELS
+    if any(WEATHER_MODELS.get(m, {}).get('type') == 'archive' for m in data.get('models', [])):
+        fechas = [min(fechas[0], today), min(fechas[1], today)]
     sfc = MeteoSfc(place, fechas)
     sfc.get_data('openmeteo', models=data['models'])
 
@@ -65,8 +70,7 @@ def meteogram():
         models = data['models']
 
         vrt = None
-        if (len(models) == 1
-                and WEATHER_MODELS.get(models[0], {}).get('type') == 'forecast'):
+        if len(models) == 1 and WEATHER_MODELS.get(models[0], {}).get('type') in ('forecast', 'archive'):
             vrt = MeteoVrt(place, fechas)
             vrt.get_data('openmeteo', model=models[0])
 
@@ -140,6 +144,9 @@ def skewt():
 
         place = Place(_build_place_feature(data))
         fechas = [data['date_start'], data['date_end']]
+        if WEATHER_MODELS[model].get('type') == 'archive':
+            today = date.today().isoformat()
+            fechas = [min(fechas[0], today), min(fechas[1], today)]
         time = data.get('time')
 
         vrt = MeteoVrt(place, fechas)
