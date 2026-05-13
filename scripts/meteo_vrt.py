@@ -604,7 +604,7 @@ class MeteoVrt:
             dewp_vals.append(Td)
             u_vals.append(u)
             v_vals.append(v)
-            z_vals.append(z_here)
+            z_vals.append(row.get(f'geopotential_height_{level}hPa', np.nan))
         return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, z_vals
 
     def compute_skewt_indices(self, time: str) -> dict:

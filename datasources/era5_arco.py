@@ -31,16 +31,7 @@ def fetch_era5_arco(lat, lon, start_date, end_date, levels=None, variables=None)
         consolidated=False,
         storage_options={'token': 'anon'},
     )
-    available = [v for v in variables if v in ds.variables]
-    required_core = {'temperature', 'u_component_of_wind', 'v_component_of_wind', 'geopotential'}
-    missing_core = sorted(required_core - set(available))
-    if missing_core:
-        raise KeyError(f"ARCO dataset missing required variables: {missing_core}")
-
-    if 'specific_humidity' not in available:
-        raise KeyError("ARCO dataset is missing required variable: 'specific_humidity'")
-
-    sub = ds[available].sel(
+    sub = ds[variables].sel(
         latitude=lat,
         longitude=lon,
         method='nearest',
