@@ -30,6 +30,8 @@ Deployable as a standalone web app (Flask + Leaflet) or usable as a Python libra
 - **Weather Underground PWS stations** — discover and overlay observed station data as scatter markers
 - **Interactive Leaflet map** — click to select location; CartoDB / Esri satellite / hybrid basemaps
 - **GeoJSON vector layers** — load fire perimeters or any polygon layer; colour picker per layer; auto-zoom to extent
+- **Skew-T log-P diagrams** — interactive slider with synoptic hours (00/06/12/18 UTC); thermodynamic indices (CAPE, CIN, LCL, TCON); geopotential height annotations; incremental cache on disk (`/tmp/skewt_cache/`)
+- **Meteogram zoom slider** — dual-range selector preserves the original date range, enabling iterative zoom-in/zoom-out without regenerating from the sidebar
 - **Excel export** — download the full hourly dataset (one sheet per source)
 - **10-day limit** with automatic date clamping
 
@@ -41,7 +43,8 @@ open-meteograms/
 │   └── routes/
 │       ├── search.py       ← /api/search  /api/reverse  /api/place
 │       ├── meteogram.py    ← POST /api/meteogram → PNG
-│       │                      POST /api/excel    → .xlsx
+│   │                      POST /api/excel    → .xlsx
+│   │                      POST /api/skewt    → JSON (images + indices)
 │       └── stations.py     ← /api/stations (WU PWS)
 ├── static/                 ← Frontend (Leaflet + vanilla JS)
 │   ├── index.html

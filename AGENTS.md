@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code / AI agents when working with code in this repository.
 
 ## Project Overview
 
@@ -20,10 +20,11 @@ Create a `.env` file in the project root for API keys (already in `.gitignore`):
 WU_API_KEY=your_weather_underground_api_key
 ```
 
-Run the Streamlit viewer:
+Run the Flask app:
 
 ```bash
-streamlit run app.py
+python api/app.py
+# → http://localhost:7860
 ```
 
 Run the Jupyter notebook (alternative workflow):
@@ -36,14 +37,20 @@ There is no test suite and no linter configured.
 
 ## Architecture
 
-`OpenMeteograms.py` is a legacy monolithic file kept for reference. The canonical implementation lives in `scripts/` and `datasources/`:
+`OpenMeteograms.py` is a legacy monolithic file kept for reference. The canonical implementation lives in `scripts/` and `datasources/`, served by a Flask web viewer in `api/`:
 
 | File | Responsibility |
 |------|---------------|
-| `app.py` | Streamlit viewer — map, search, sidebar controls, meteogram dialog |
+| `api/app.py` | Flask entry point — `matplotlib.use('Agg')` before imports |
+| `api/routes/meteogram.py` | `/api/meteogram` → PNG, `/api/excel` → .xlsx, `/api/skewt` → JSON |
+| `api/routes/search.py` | Geocoding proxy + `/api/place` (elevation, tz, sunrise/sunset) |
+| `api/routes/stations.py` | WU PWS station discovery |
+| `static/index.html` | Leaflet map, sidebar, meteogram modal with tabs |
+| `static/css/style.css` | Dark-theme styles |
+| `static/js/app.js` | Frontend logic — map, search, modal, zoom slider, Skew-T |
 | `scripts/place.py` | `nominatim()` geocoding + `Place` (lat/lon, elevation, timezone, utility URLs) |
 | `scripts/meteo_sfc.py` | `MeteoSfc` — surface data pipeline and 4-panel meteogram |
-| `scripts/meteo_vrt.py` | `MeteoVrt` — vertical pressure-level data, time-height cross section, BLH; `profileplot()` standalone, `plot_on_axes()` for meteoplot integration |
+| `scripts/meteo_vrt.py` | `MeteoVrt` — vertical pressure-level data, time-height cross section, BLH; `profileplot()`, `plot_on_axes()`, `skewt()` |
 | `scripts/weather_models.py` | `WEATHER_MODELS` dict — NWP model definitions (keyword, type, resolution, etc.) |
 | `datasources/openmeteo.py` | Thin HTTP layer: `fetch_surface()` and `fetch_vertical()` |
 | `datasources/wx_stations.py` | WU PWS station discovery (`fetch_wu_stations_near`) and hourly history (`fetch_wu_hourly`) |
@@ -93,20 +100,40 @@ fig = sfc.meteoplot(vrt=vrt)   # returns matplotlib.Figure
 - **`is_day` for stations**: derived from local hour (06–20 inclusive) since WU does not provide a solar flag.
 - **`datos_ref`**: Always the first source in `source_list`. Drives night shading and the ignition semaphore regardless of how many sources are loaded.
 - **`Place.__init__` makes HTTP calls**: Elevation is fetched from Open-Meteo and timezone is resolved via `timezonefinder` during construction — avoid instantiating `Place` in hot paths.
-- **`app.py` event-queue pattern**: User interactions (map click, search selection) are stored in `st.session_state.event` and consumed before the map renders each run. `last_click` / `last_selected` deduplication prevents infinite rerun loops caused by `st_folium` and `st_searchbox` persisting their values across reruns. Both `nominatim_search()` (forward) and `nominatim_reverse()` (map click) are `@st.cache_data(ttl=86400)`. Map clicks use reverse geocoding to build a `Place`; search uses `nominatim_search` + `st.session_state.search_results` dict to look up the selected feature.
-- **`app.py` uses `MeteoVrt` for single forecast-model runs only**: The meteogram dialog instantiates `MeteoVrt` only when exactly one model is selected and its `type == 'forecast'`. Archive models and station-only runs skip `MeteoVrt`.
-- **Date range clamped to 10 days**: The sidebar validates the date picker and clamps `d_end = d_start + timedelta(days=10)` if the user selects a wider window. December→January year-crossing is the only supported cross-year range.
-- **WU station discovery**: `fetch_wu_stations_near(lat, lon, radius_km, api_key)` converts the radius to an axis-aligned bbox, maps it to WU tile coordinates (lod=9, tile-size=512, effective zoom 8), and queries the tile API. Returns current observations alongside station metadata. Results are cached in `app.py` with `@st.cache_data(ttl=3600)`. After a successful search, `st.rerun()` is called so the map re-renders immediately with the new markers; an empty-result warning is shown via the `wx_searched` session state flag.
-- **WU station page link**: popup includes a "View on Wunderground →" link generated as `https://www.wunderground.com/dashboard/pws/{stationId}`.
-- **WU API key**: stored in `.env` (`WU_API_KEY=...`), loaded at startup via `python-dotenv`. Pre-fills the sidebar input; can be overridden interactively.
-- **Vector layers (`geojson_layers`)**: `st.session_state.geojson_layers` is a `list[dict]` where each entry holds `{name, data, color, visible, n_feat}`. Managed via the "📂 Vector layers" section always visible in the sidebar (above the date range, outside the `if place:` block). Accepts GeoJSON `FeatureCollection` or bare `Feature` objects (auto-wrapped). Layers are rendered in `_build_map()` via `folium.GeoJson` with fill at 25% opacity and stroke at 85%. `_geojson_name_field()` scans the first 10 features for a `name`/`label`/`nombre`/`titulo` property and wires a tooltip if found. `folium.LayerControl` is added to the map only when at least one layer is visible. Layers always render (no visibility toggle); deleted with ✕ button. Duplicates (same filename) are silently skipped. Persist for the session only (no disk persistence).
-- **X-axis tick hierarchy**: for ≤4-day ranges the bottom axis uses `DayLocator` (major, `%b %d`, normal size) + `HourLocator` (minor, `%H:%M`, `labelsize=7`) so days visually outweigh hours. For >4 days only `DayLocator` with `%b-%d` is used. All panels (including wind direction) get dotted minor grid lines (`alpha=0.15`, `linestyle=':'`) in the ≤4-day case.
-- **`skewt()` is unimplemented**: `MeteoVrt.skewt()` raises `NotImplementedError`; placeholder for future MetPy integration.
-- **Flask viewer** (`api/`): canonical web interface replacing the Streamlit `app.py`. Entry point is `api/app.py`; blueprints in `api/routes/` (`search`, `meteogram`, `stations`). Static files served from `static/` (Leaflet map, sidebar, modal).
-- **`matplotlib.use('Agg')` in `api/app.py`**: must be called immediately after `sys.path.insert` and before any Flask or script imports; prevents Tkinter crash (`RuntimeError: main thread is not in main loop`) when matplotlib is used from Flask worker threads.
-- **Meteogram modal tabs**: Meteogram and Skew-T tabs are right-aligned in `#modal-header-right`. The Skew-T tab preloads data in background via `setTimeout(() => loadSkewt(), 0)` when the modal opens; a `skewtState.loading` boolean guard prevents double-fetch if the user clicks the tab before the preload resolves.
-- **Dual range zoom slider** (`#meteo-zoom`): appears below the meteogram image after it loads. Two overlapping `<input type="range">` with `pointer-events: none` on the element and `pointer-events: all` on the thumb pseudo-element. A `<div id="dual-range-fill">` tracks the selected range. Minimum gap of 2 days enforced. "Actualizar" button re-fetches `/api/meteogram` with the narrowed `date_start`/`date_end` stored in `_modalPayload`; on success `showModalImage` reinitializes the sliders to the new (narrower) range.
-- **`/api/skewt` endpoint** (`api/routes/meteogram.py`): POST, accepts `{lat, lon, name, model, date_start, date_end, time?}`. Returns `{times, time, image: "data:image/png;base64,...", indices: {cape, cin, lcl_hpa, lcl_temp, trigger_temp}}`. When `time` is omitted, returns the first available timestamp and the full `times` list.
+- **Date range clamped to 10 days**: Sidebar date picker clamps to 10 days max.
+- **WU API key**: stored in `.env` (`WU_API_KEY=...`), loaded via `python-dotenv`. Pre-fills the sidebar input.
+- **`matplotlib.use('Agg')` in `api/app.py`**: must be called immediately after `sys.path.insert` and before any Flask or script imports; prevents Tkinter crash.
+- **Dual-range zoom slider** (`#meteo-zoom`): appears below the meteogram image. Two overlapping `<input type="range">` with `pointer-events: none` on the element and `pointer-events: all` on the thumb. Tracks the **original** date range (`_zoomOrigStart/End`) so that zooming iteratively keeps the original range as the slider reference. Minimum gap of 2 days enforced. "Actualizar" button re-fetches `/api/meteogram` with the narrowed range without resetting slider positions.
+- **Skew-T incremental cache**: `skewtState.cache` (JS `Map<time, {image, indices}>`) stores all preloaded images client-side. `skewtState.allTimes` tracks every synoptic time ever fetched. When the user changes the zoom slider on the meteogram and switches back to the Skew-T tab, `getMissingRange()` computes only the date range NOT yet cached and fetches that subset from the server — existing images are never re-fetched or re-generated. When the new range is a subset of the cache, zero server calls are made.
+- **Skew-T slider**: replaced the `<select>` dropdown with an `<input type="range">` for browsing through synoptic hours (00/06/12/18 UTC). Included ◄/► arrows as shortcuts. All images are preloaded on first tab click, so switching between hours is instant (no server round-trip).
+
+### `MeteoVrt.skewt()` plot
+
+The `skewt()` method in `scripts/meteo_vrt.py` generates a Skew-T log-P diagram using MetPy:
+
+- Red line for temperature, green line for dew point
+- Wind barbs plotted on the right side of the plot area
+- Geopotential height annotations (m) in red at x=38 for each displayed pressure level
+- 10 pressure levels: 1000, 975, 950, 925, 900, 850, 800, 700, 600, 500 hPa
+- Title: `Skew-T {name} ({lat}, {lon})`
+- Dry/moist adiabats and mixing lines as background reference
+
+### `/api/skewt` endpoint
+
+`POST /api/skewt` accepts `{lat, lon, name, model, date_start, date_end}`. Returns:
+
+```json
+{
+  "times": ["2025-07-01 00:00", "2025-07-01 06:00", ...],
+  "time": "2025-07-01 12:00",
+  "images": { "2025-07-01 00:00": "data:image/png;base64,...", ... },
+  "indices": { "2025-07-01 00:00": { "cape": ..., "cin": ..., "lcl_hpa": ..., "lcl_temp": ..., "tcon": ... }, ... }
+}
+```
+
+- Only synoptic hours (00, 06, 12, 18 UTC) are returned
+- All images are generated on first request and cached on disk at `/tmp/skewt_cache/` (MD5 keyed by lat+lon+model+dates+time)
+- Thermodynamic indices computed via MetPy: CAPE, CIN, LCL (hPa + °C), TCON (convective temperature)
 
 ### Available weather models (`WEATHER_MODELS` keys)
 
@@ -158,9 +185,7 @@ fig = sfc.meteoplot(vrt=vrt)   # returns matplotlib.Figure
 
 ## Pending / Backlog
 
-- **Zoom slider bug**: al hacer zoom el slider reinicia con el rango acotado como nuevo rango completo; debería mantener el rango original como referencia para poder deshacer el zoom o ampliar en otra zona sin tener que regenerar desde el sidebar.
 - **Meteograma — índice de inestabilidad**: valorar agregar una barra de color (Haines index o CAPE) al meteograma de superficie, posiblemente como banda coloreada en el panel superior o en el panel de combustible.
 - **Meteograma — precipitación**: valorar introducir un subplot de precipitación entre el panel de temperatura y el de humedad del combustible (actualmente hay un panel de temperatura/RH y luego el panel FUEL; la precipitación iría en medio).
-- **Skew-T — índices**: `trigger_temp` y otros índices termodinámicos (Lifted Index, K-index, Showalter) no están calculados en `api/routes/meteogram.py`; el endpoint devuelve `None` para `trigger_temp`.
-- **Skew-T — precarga**: la precarga en background (`setTimeout`) no funciona correctamente; el componente aparece con todos los días y horas del rango en lugar de mostrar sólo el instante más cercano al momento actual.
+- **Skew-T — índices adicionales**: Lifted Index, K-index, Showalter no están calculados en `api/routes/meteogram.py`; solo se computan CAPE, CIN, LCL y TCON.
 - **Migración a Plotly/JavaScript**: valorar reemplazar matplotlib por Plotly para obtener gráficos interactivos en el navegador (zoom nativo, hover, pan) sin necesidad de regenerar imágenes en el servidor.
