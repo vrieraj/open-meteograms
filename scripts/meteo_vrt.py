@@ -210,7 +210,8 @@ class MeteoVrt:
             wide = wide.merge(merged, on='time', how='left')
 
         wide['day_year'] = wide['time'].dt.dayofyear
-        for level in sorted(long['pressure'].unique()):
+        levels_in_data = sorted(long['pressure'].unique())
+        for level in levels_in_data:
             li = int(round(level))
             ws = wide.get(f'wind_speed_{li}hPa')
             wd = wide.get(f'wind_direction_{li}hPa')
@@ -224,6 +225,17 @@ class MeteoVrt:
             wide['boundary_layer_height'] = np.maximum(z1000 - self.elev, 10)
         else:
             wide['boundary_layer_height'] = np.nan
+
+        # Inversions between consecutive levels (descending pressure)
+        display_relevant = sorted(
+            set(levels_in_data) & set(self.LEVELS_DISPLAY), reverse=True)
+        for i in range(len(display_relevant) - 1):
+            lower = int(round(display_relevant[i]))
+            upper = int(round(display_relevant[i + 1]))
+            t_lo = wide[f'temperature_{lower}hPa']
+            t_hi = wide[f'temperature_{upper}hPa']
+            wide[f'inversion_{lower}_{upper}'] = t_hi > t_lo
+
         return wide
 
     def _process_response(self, data: dict, source_name: str):
@@ -521,6 +533,12 @@ class MeteoVrt:
         """Fetch extended pressure levels (LEVELS_SKEWT) for Skew-T on demand."""
         if self._skewt_modelo is None:
             raise ValueError("Call get_data() first.")
+
+        if self._skewt_modelo.get('keyword') == 'era5':
+            hours = self.datos['time'].dt.hour
+            self._datos_skewt = self.datos[hours.isin([0, 6, 12, 18])].copy()
+            return
+
         data = fetch_vertical(self.lat, self.lon, self.elev,
                               self.tzinfo, self._skewt_fechas, self._skewt_modelo,
                               self.LEVELS_SKEWT)

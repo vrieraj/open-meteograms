@@ -91,7 +91,7 @@ def meteogram():
 
         vrt = None
         if (len(models) == 1
-                and WEATHER_MODELS.get(models[0], {}).get('type') == 'forecast'):
+                and WEATHER_MODELS.get(models[0], {}).get('type') in ('forecast', 'archive')):
             vrt = MeteoVrt(place, fechas)
             vrt.get_data('openmeteo', model=models[0])
 

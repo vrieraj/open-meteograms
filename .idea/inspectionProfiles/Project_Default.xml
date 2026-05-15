@@ -1,0 +1,92 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="false" level="WARNING" enabled_by_default="false">
+      <option name="ignoredPackages">
+        <list>
+          <option value="beautifulsoup4" />
+          <option value="asttokens" />
+          <option value="Cartopy" />
+          <option value="certifi" />
+          <option value="cffi" />
+          <option value="charset-normalizer" />
+          <option value="comm" />
+          <option value="contourpy" />
+          <option value="cryptography" />
+          <option value="cycler" />
+          <option value="debugpy" />
+          <option value="decorator" />
+          <option value="earthengine-api" />
+          <option value="executing" />
+          <option value="fonttools" />
+          <option value="geopandas" />
+          <option value="google-api-core" />
+          <option value="google-api-python-client" />
+          <option value="google-auth" />
+          <option value="google-auth-httplib2" />
+          <option value="google-auth-oauthlib" />
+          <option value="google-cloud-core" />
+          <option value="google-cloud-storage" />
+          <option value="google-crc32c" />
+          <option value="google-resumable-media" />
+          <option value="googleapis-common-protos" />
+          <option value="httplib2" />
+          <option value="idna" />
+          <option value="ipykernel" />
+          <option value="ipython" />
+          <option value="ipython_pygments_lexers" />
+          <option value="jedi" />
+          <option value="jupyter_client" />
+          <option value="jupyter_core" />
+          <option value="kiwisolver" />
+          <option value="matplotlib" />
+          <option value="matplotlib-inline" />
+          <option value="nest-asyncio" />
+          <option value="numpy" />
+          <option value="oauthlib" />
+          <option value="packaging" />
+          <option value="pandas" />
+          <option value="parso" />
+          <option value="pexpect" />
+          <option value="pillow" />
+          <option value="pip" />
+          <option value="platformdirs" />
+          <option value="prompt_toolkit" />
+          <option value="proto-plus" />
+          <option value="protobuf" />
+          <option value="psutil" />
+          <option value="ptyprocess" />
+          <option value="pure_eval" />
+          <option value="pyasn1" />
+          <option value="pyasn1_modules" />
+          <option value="pycparser" />
+          <option value="Pygments" />
+          <option value="pyogrio" />
+          <option value="pyparsing" />
+          <option value="pyproj" />
+          <option value="pyshp" />
+          <option value="python-dateutil" />
+          <option value="pyzmq" />
+          <option value="requests" />
+          <option value="requests-oauthlib" />
+          <option value="rsa" />
+          <option value="shapely" />
+          <option value="six" />
+          <option value="stack-data" />
+          <option value="tornado" />
+          <option value="traitlets" />
+          <option value="uritemplate" />
+          <option value="urllib3" />
+          <option value="wcwidth" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStubPackagesAdvertiser" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="pandas" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
