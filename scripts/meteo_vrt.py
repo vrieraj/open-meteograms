@@ -20,6 +20,8 @@ import matplotlib.dates as mdates
 
 from .weather_models import WEATHER_MODELS
 from datasources.openmeteo import fetch_vertical
+from datasources.era5_earthdata import fetch_era5_earthdata
+from core.vertical_dataset import VerticalDataset
 
 
 class MeteoVrt:
@@ -53,11 +55,60 @@ class MeteoVrt:
         self.tzinfo = place.tzinfo
         self.fechas = fechas
         self.datos = None
+        self.dataset = None
         self.source_name = None
         self._datos_skewt = None    # lazy-loaded on first skewt() call
         self._skewt_modelo = None   # model dict used for Skew-T fetch
         self._skewt_fechas = None   # date range used for Skew-T fetch
         self.weather_models = WEATHER_MODELS.copy()
+
+    @staticmethod
+    def _dewpoint_from_t_rh(T, rh):
+        e_s = 6.112 * np.exp(17.67 * T / (T + 243.5))
+        e = (rh / 100.0) * e_s
+        return 243.5 * np.log(e / 6.112) / (17.67 - np.log(e / 6.112))
+
+    def _to_vertical_dataset(self, wide_df: pd.DataFrame, levels: list[int]) -> VerticalDataset:
+        records = []
+        for _, row in wide_df.iterrows():
+            t = row['time']
+            for level in levels:
+                tcol = f'temperature_{level}hPa'
+                rhcol = f'relative_humidity_{level}hPa'
+                wcol = f'wind_speed_{level}hPa'
+                dcol = f'wind_direction_{level}hPa'
+                zcol = f'geopotential_height_{level}hPa'
+                if tcol not in row.index:
+                    continue
+                T = row.get(tcol, np.nan)
+                rh = row.get(rhcol, np.nan)
+                ws = row.get(wcol, np.nan)
+                wd = row.get(dcol, np.nan)
+                z = row.get(zcol, np.nan)
+                if pd.isna(T) or pd.isna(rh):
+                    continue
+                dew = self._dewpoint_from_t_rh(T, rh)
+                ws_kt = ws * 0.539957 if not pd.isna(ws) else np.nan
+                u = -ws_kt * np.sin(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+                v = -ws_kt * np.cos(np.radians(wd)) if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan
+                records.append({
+                    'time': t, 'pressure': level, 'temperature': T,
+                    'relative_humidity': rh, 'dewpoint': dew, 'u': u, 'v': v,
+                    'wind_speed': ws, 'wind_direction': wd, 'geopotential_height': z,
+                })
+        ds = VerticalDataset(pd.DataFrame.from_records(records))
+        ds.validate()
+        return ds
+
+    def get_profile(self, time):
+        if self.dataset is None:
+            raise ValueError('No vertical dataset. Call get_data() first.')
+        return self.dataset.get_profile(time)
+
+    def get_time_series(self, level):
+        if self.dataset is None:
+            raise ValueError('No vertical dataset. Call get_data() first.')
+        return self.dataset.get_time_series(level)
 
     # ══════════════════════════════════════════════════════════════════════
     #  DATA PIPELINE
@@ -98,6 +149,18 @@ class MeteoVrt:
         """Fetch pressure-level data from Open-Meteo forecast model."""
         if model_name not in self.weather_models:
             raise ValueError(f"Unknown model: '{model_name}'")
+        if model_name == 'ERA5':
+            levels_era5 = sorted(set(self.LEVELS_ALL) | set(self.LEVELS_SKEWT))
+            ds = fetch_era5_earthdata(
+                self.lat, self.lon, self.fechas[0], self.fechas[1],
+                levels=levels_era5,
+            )
+            self.dataset = ds
+            self.datos = self._dataset_to_legacy_wide(ds.df)
+            self.source_name = model_name
+            self._skewt_modelo = self.weather_models['ERA5']
+            self._skewt_fechas = self.fechas
+            return
         modelo = self.weather_models[model_name]
         data = fetch_vertical(self.lat, self.lon, self.elev,
                               self.tzinfo, self.fechas, modelo,
@@ -127,6 +190,41 @@ class MeteoVrt:
         self.datos['time'] = self.datos['time'] + pd.DateOffset(years=delta)
         self._skewt_modelo = self.weather_models['ERA5']
         self._skewt_fechas = fechas_era5
+
+    def _dataset_to_legacy_wide(self, df_long: pd.DataFrame) -> pd.DataFrame:
+        long = df_long.copy()
+        long['time'] = pd.to_datetime(long['time'])
+        wide = pd.DataFrame({'time': sorted(long['time'].unique())})
+
+        for level, chunk in long.groupby('pressure'):
+            level_i = int(round(level))
+            chunk = chunk.sort_values('time')
+            merged = chunk[['time', 'temperature', 'relative_humidity', 'wind_speed',
+                            'wind_direction', 'geopotential_height']].rename(columns={
+                'temperature': f'temperature_{level_i}hPa',
+                'relative_humidity': f'relative_humidity_{level_i}hPa',
+                'wind_speed': f'wind_speed_{level_i}hPa',
+                'wind_direction': f'wind_direction_{level_i}hPa',
+                'geopotential_height': f'geopotential_height_{level_i}hPa',
+            })
+            wide = wide.merge(merged, on='time', how='left')
+
+        wide['day_year'] = wide['time'].dt.dayofyear
+        for level in sorted(long['pressure'].unique()):
+            li = int(round(level))
+            ws = wide.get(f'wind_speed_{li}hPa')
+            wd = wide.get(f'wind_direction_{li}hPa')
+            if ws is not None and wd is not None:
+                ws_kt = ws * 0.539957
+                wide[f'u_{li}'] = -ws_kt * np.sin(np.radians(wd))
+                wide[f'v_{li}'] = -ws_kt * np.cos(np.radians(wd))
+
+        if 'geopotential_height_1000hPa' in wide.columns:
+            z1000 = pd.to_numeric(wide['geopotential_height_1000hPa'], errors='coerce')
+            wide['boundary_layer_height'] = np.maximum(z1000 - self.elev, 10)
+        else:
+            wide['boundary_layer_height'] = np.nan
+        return wide
 
     def _process_response(self, data: dict, source_name: str):
         """Transform raw API response into processed DataFrame."""
@@ -395,12 +493,23 @@ class MeteoVrt:
         ax.set_ylabel('Pressure (hPa)')
         ax.grid(True, alpha=0.3)
 
-        # Right axis with approximate altitudes
+        # Right axis with geopotential height from model data
         ax2 = ax.twinx()
         ax2.set_ylim(ax.get_ylim())
         ax2.set_yticks(levels)
-        ax2.set_yticklabels([f'{self.ALTITUDES[l]} m' for l in levels])
-        ax2.set_ylabel('Altitude (m ASL)')
+        height_labels = []
+        for level in levels:
+            zcol = f'geopotential_height_{level}hPa'
+            if zcol in vd.columns:
+                z = pd.to_numeric(vd[zcol], errors='coerce').iloc[0]
+                if np.isfinite(z):
+                    height_labels.append(f'{int(round(z))} m')
+                else:
+                    height_labels.append('—')
+            else:
+                height_labels.append('—')
+        ax2.set_yticklabels(height_labels)
+        ax2.set_ylabel('Geopotential height (m ASL)')
 
         handles, labels = ax.get_legend_handles_labels()
         if handles:

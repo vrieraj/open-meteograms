@@ -313,7 +313,6 @@ class MeteoSfc:
             and vrt.datos is not None
             and single_source
             and _src0 not in self.station_sources
-            and self.weather_models.get(str(_src0), {}).get('type') == 'forecast'
         )
 
         # ── FIGURE ────────────────────────────────────────
@@ -511,8 +510,10 @@ class MeteoSfc:
         self._plot_ignition_semaphore(ax[FUEL], datos_ref)
 
         # ── TITLE ─────────────────────────────────────────
+        lat_dir = 'N' if self.lat >= 0 else 'S'
+        lon_dir = 'E' if self.lon >= 0 else 'W'
         fig.suptitle(
-            f'Meteogram — {self.name}  |  {self.lat:.4f}°  {self.lon:.4f}°',
+            f'Meteogram — {self.name}  |  {abs(self.lat):.2f}° {lat_dir}  {abs(self.lon):.2f}° {lon_dir}',
             fontsize=12, fontweight='bold'
         )
         fig.tight_layout()

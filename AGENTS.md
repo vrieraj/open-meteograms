@@ -18,6 +18,7 @@ Create a `.env` file in the project root for API keys (already in `.gitignore`):
 
 ```
 WU_API_KEY=your_weather_underground_api_key
+EARTHDATAHUB_API_KEY=your_earthdatahub_token
 ```
 
 Run the Flask app:
@@ -53,7 +54,11 @@ There is no test suite and no linter configured.
 | `scripts/meteo_vrt.py` | `MeteoVrt` — vertical pressure-level data, time-height cross section, BLH; `profileplot()`, `plot_on_axes()`, `skewt()` |
 | `scripts/weather_models.py` | `WEATHER_MODELS` dict — NWP model definitions (keyword, type, resolution, etc.) |
 | `datasources/openmeteo.py` | Thin HTTP layer: `fetch_surface()` and `fetch_vertical()` |
+| `datasources/era5_earthdata.py` | ERA5 pressure levels via EarthDataHub DestinE Zarr (`fetch_era5_earthdata()`) |
 | `datasources/wx_stations.py` | WU PWS station discovery (`fetch_wu_stations_near`) and hourly history (`fetch_wu_hourly`) |
+| `core/vertical_dataset.py` | `VerticalDataset` — long-format container for vertical profile data |
+| `core/interpolation.py` | Vertical interpolation utilities |
+| `core/thermodynamics.py` | Thermodynamic helpers (`compute_theta_v`) |
 | `scripts/wx_scraper/wow_metie_scraper.py` | CLI: download WOW Met Éireann single-station observations to CSV |
 | `scripts/wx_scraper/wow_stations_geojson.py` | CLI: discover active WOW Met Éireann stations → GeoJSON |
 
@@ -94,7 +99,7 @@ fig = sfc.meteoplot(vrt=vrt)   # returns matplotlib.Figure
 - **`MeteoVrt` is single-source, not accumulated**: `MeteoVrt.datos` is replaced on each `get_data()` call. Only the most recent fetch is retained.
 - **ERA5 year overlay**: Historical ERA5 data is date-shifted to the current year (`+ pd.DateOffset(years=delta)`) so that multiple years plot on the same x-axis.
 - **BLH fallback**: `MeteoVrt` uses the API's `boundary_layer_height` when available; missing values are estimated via Bulk Richardson number (Ri_crit=0.25, 8 pressure levels from 1000–700 hPa).
-- **Vertical vs. wind panel**: Panel 0 of `meteoplot()` shows a time-height cross section only when `vrt` is passed, there is exactly one source, that source is a forecast model (`type == 'forecast'`), and it is not a station. Otherwise it shows wind direction arrows. Archive-only or station-only runs always show wind direction arrows.
+- **Vertical vs. wind panel**: Panel 0 of `meteoplot()` shows a time-height cross section when `vrt` is passed, there is exactly one source, and it is not a station. Works with both forecast and archive models (incl. ERA5 via EarthDataHub). Otherwise it shows wind direction arrows.
 - **Station sources (`station_sources`)**: `MeteoSfc` keeps a `set[str]` of station IDs added via `get_data_station()`. `meteoplot()` renders these as scatter markers (`marker='o'`, `s=18`) instead of lines, using the same palette color as the source's position in `source_list`. Legends use a dot handle for stations.
 - **Station data columns**: `fetch_wu_hourly()` returns a DataFrame with the same column names as Open-Meteo (`temperature_2m`, `dew_point_2m`, `relative_humidity_2m`, `wind_speed_10m`, `wind_gusts_10m`, `wind_direction_10m`). `vapour_pressure_deficit` is NaN (WU does not provide it), so VPD-based FM is not computed for stations. Fosberg FM and wind arrows are computed normally.
 - **`is_day` for stations**: derived from local hour (06–20 inclusive) since WU does not provide a solar flag.
@@ -160,6 +165,16 @@ The `skewt()` method in `scripts/meteo_vrt.py` generates a Skew-T log-P diagram 
 - Forecast models: `https://api.open-meteo.com/v1/forecast`
 - Archive models (ERA5, ECMWF IFS): `https://archive-api.open-meteo.com/v1/archive`
 - The `type` field in `WEATHER_MODELS` (`'forecast'` vs `'archive'`) controls which endpoint is used.
+
+### EarthDataHub DestinE (ERA5 pressure levels)
+
+- Zarr store: `https://data.earthdatahub.destine.eu/era5/reanalysis-era5-pressure-levels-v0.zarr`
+- Auth via token in URL: `https://edh:{token}@...`
+- Time dimension: `valid_time`, level dimension: `isobaricInhPa`
+- Variable names: `t`, `q`, `r`, `u`, `v`, `z`
+- Available levels: 1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10, 5, 1 hPa
+- Requires `EARTHDATAHUB_API_KEY` in `.env` (register at https://earthdatahub.destine.eu/)
+- `MeteoVrt.get_data('openmeteo', model='ERA5')` uses this backend; returns geopotential height, wind, temperature, dewpoint, and humidity for all available pressure levels
 
 ### WU PWS API endpoints
 
