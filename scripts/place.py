@@ -79,13 +79,18 @@ class Place:
         return properties
 
     def elevation(self):
-        url = f'https://api.open-meteo.com/v1/elevation?latitude={self.lat}&longitude={self.lon}'
-        response = requests.get(url).json()
-        return round(response['elevation'][0])
+        try:
+            url = f'https://api.open-meteo.com/v1/elevation?latitude={self.lat}&longitude={self.lon}'
+            response = requests.get(url, timeout=5).json()
+            return round(response['elevation'][0])
+        except Exception:
+            return None
 
     def time_zone(self):
         tf = TimezoneFinder()
         tz_str = tf.timezone_at(lat=self.lat, lng=self.lon)
+        if not tz_str:
+            return pytz.UTC, 0
         tzinfo = pytz.timezone(tz_str)
         delta_time = dt.datetime.now(tzinfo).hour - dt.datetime.now().hour
         return tzinfo, delta_time
