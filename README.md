@@ -1,13 +1,3 @@
----
-title: Open Meteograms
-emoji: 🌤️
-colorFrom: red
-colorTo: red
-sdk: docker
-pinned: false
-license: gpl-3.0
----
-
 # 🌤️ Open Meteograms — Wildfire Weather Viewer
 
 A web-based meteogram generator focused on **wildfire weather** variables. Fetches hourly forecasts and historical reanalysis from the [Open-Meteo API](https://open-meteo.com/) and renders 4-panel fire-weather charts for any location worldwide.
@@ -74,19 +64,6 @@ echo "WU_API_KEY=your_key" > .env
 python api/app.py
 # → http://localhost:7860
 ```
-
-## Deploy on Hugging Face Spaces
-
-1. Create a Space with **SDK: Docker**
-2. Add `WU_API_KEY` under **Settings → Secrets**
-3. Push this repository to the Space:
-
-```bash
-git remote add hf https://huggingface.co/spaces/<user>/<space-name>
-git push hf main
-```
-
-Hugging Face runs `docker build` automatically and exposes the app at `https://<user>-<space-name>.hf.space`.
 
 ## Python library usage
 
