@@ -528,6 +528,39 @@ button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 .nav-arrow:hover:not(:disabled) { background: #3a3a5e; }
 .nav-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* ── SKEW-T SLIDER ── */
+#skewt-slider {
+  width: 200px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #3a3a5e;
+  border-radius: 2px;
+  outline: none;
+}
+#skewt-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #2c6be4;
+  border: 2px solid #fff;
+  cursor: pointer;
+}
+#skewt-slider::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #2c6be4;
+  border: 2px solid #fff;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+#skewt-time-label {
+  font-size: 12px;
+  color: #d0d0ee;
+  white-space: nowrap;
+  min-width: 130px;
+}
+
 /* ── ZOOM SLIDER ── */
 #meteo-zoom {
   width: 100%;

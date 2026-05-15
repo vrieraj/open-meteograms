@@ -1,4 +1,7 @@
 import io
+import os
+import hashlib
+import base64
 import pandas as pd
 from flask import Blueprint, request, jsonify, send_file
 
@@ -11,6 +14,28 @@ COL_ORDER = [
     'vapour_pressure_deficit', 'fuel_moisture', 'fuel_moisture_vpd',
     'prob_ignition',
 ]
+
+SKEWT_SYNOPTIC_HOURS = {0, 6, 12, 18}
+_SKEWT_CACHE_DIR = '/tmp/skewt_cache'
+
+
+def _skewt_cache_key(lat, lon, model, date_start, date_end, time):
+    raw = f"{lat}_{lon}_{model}_{date_start}_{date_end}_{time}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _skewt_cache_get(key):
+    path = os.path.join(_SKEWT_CACHE_DIR, key + '.png')
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            return f.read()
+    return None
+
+
+def _skewt_cache_set(key, fig):
+    os.makedirs(_SKEWT_CACHE_DIR, exist_ok=True)
+    path = os.path.join(_SKEWT_CACHE_DIR, key + '.png')
+    fig.savefig(path, format='png', dpi=120, bbox_inches='tight')
 
 
 def _build_place_feature(data):
@@ -128,7 +153,6 @@ def skewt():
             return jsonify({'error': f'Missing: {k}'}), 400
 
     try:
-        import base64
         import matplotlib.pyplot as plt
         from scripts.place import Place
         from scripts.meteo_vrt import MeteoVrt
@@ -140,7 +164,7 @@ def skewt():
 
         place = Place(_build_place_feature(data))
         fechas = [data['date_start'], data['date_end']]
-        time = data.get('time')
+        req_time = data.get('time')
 
         vrt = MeteoVrt(place, fechas)
         vrt.get_data('openmeteo', model=model)
@@ -149,28 +173,52 @@ def skewt():
         if vrt._datos_skewt is None:
             return jsonify({'error': 'No vertical data available'}), 500
 
-        times = vrt._datos_skewt['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()
+        # Filter to synoptic hours (00, 06, 12, 18 UTC)
+        all_times = vrt._datos_skewt['time']
+        synoptic_mask = all_times.dt.hour.isin(SKEWT_SYNOPTIC_HOURS)
+        times = all_times[synoptic_mask].dt.strftime('%Y-%m-%d %H:%M').tolist()
         if not times:
             return jsonify({'error': 'No time steps available'}), 500
 
-        if time is None:
-            noon = [t for t in times if t.endswith('12:00')]
-            time = noon[0] if noon else times[0]
+        now = pd.Timestamp.now()
+        if req_time is None:
+            chosen = min(
+                [t for t in times if t.endswith('12:00')] or times,
+                key=lambda t: abs(pd.Timestamp(t) - now)
+            )
+        else:
+            chosen = req_time
 
-        indices = vrt.compute_skewt_indices(time)
+        # Generate and cache ALL synoptic-time images
+        all_images = {}
+        all_indices = {}
 
-        fig = vrt.skewt(time)
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
-        buf.seek(0)
-        img_b64 = base64.b64encode(buf.read()).decode()
-        plt.close(fig)
+        for t in times:
+            key = _skewt_cache_key(data['lat'], data['lon'], model,
+                                   data['date_start'], data['date_end'], t)
+            cached = _skewt_cache_get(key)
+            if cached is not None:
+                img_b64 = base64.b64encode(cached).decode()
+            else:
+                fig = vrt.skewt(t)
+                _skewt_cache_set(key, fig)
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+                buf.seek(0)
+                img_b64 = base64.b64encode(buf.read()).decode()
+                plt.close(fig)
+
+            all_images[t] = f'data:image/png;base64,{img_b64}'
+            all_indices[t] = vrt.compute_skewt_indices(t)
+
+        if chosen not in all_images:
+            chosen = times[0]
 
         return jsonify({
             'times': times,
-            'time': time,
-            'image': f'data:image/png;base64,{img_b64}',
-            'indices': indices,
+            'time': chosen,
+            'images': all_images,
+            'indices': all_indices,
         })
 
     except Exception as e:

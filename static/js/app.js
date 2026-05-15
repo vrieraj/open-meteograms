@@ -26,6 +26,8 @@ const state = {
 };
 
 let _modalPayload = null;
+let _zoomOrigStart = null;
+let _zoomOrigEnd = null;
 
 /* ── MAP ─────────────────────────────────────────────────────────────────────────── */
 const TILES = {
@@ -440,23 +442,26 @@ function openModal(name, start, end, models) {
   document.getElementById('modal-error').classList.add('hidden');
 
   // Zoom reset
+  _zoomOrigStart = null;
+  _zoomOrigEnd = null;
   document.getElementById('meteo-zoom').classList.add('hidden');
 
   // Skew-T tab reset
   skewtState.loaded   = false;
   skewtState.loading  = false;
   skewtState.times    = [];
+  skewtState.allTimes = [];
+  skewtState.cache    = new Map();
+  skewtState._cachedStart = null;
+  skewtState._cachedEnd   = null;
   document.getElementById('skewt-spinner').classList.add('hidden');
   document.getElementById('skewt-main').classList.add('hidden');
   document.getElementById('skewt-error').classList.add('hidden');
   document.getElementById('skewt-time-row').classList.add('hidden');
+  document.getElementById('skewt-slider').value = 0;
+  document.getElementById('skewt-slider').max = 0;
+  document.getElementById('skewt-time-label').textContent = '';
   initSkewtModelSel(models || []);
-
-  // Preload Skew-T data in background while user reads meteogram
-  setTimeout(() => {
-    const model = document.getElementById('skewt-model-sel').value;
-    if (model && WEATHER_MODELS[model]) loadSkewt();
-  }, 0);
 
   // Activate Meteogram tab by default
   document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
@@ -472,7 +477,12 @@ function showModalImage(url) {
   img.onload = () => {
     document.getElementById('modal-spinner').style.display = 'none';
     if (_modalPayload) {
-      initZoomSliders(_modalPayload.date_start, _modalPayload.date_end);
+      if (!_zoomOrigStart) {
+        initZoomSliders(_modalPayload.date_start, _modalPayload.date_end);
+      } else {
+        updateZoomLabel();
+        updateZoomFill();
+      }
       document.getElementById('meteo-zoom').classList.remove('hidden');
     }
   };
@@ -547,12 +557,19 @@ document.querySelectorAll('.modal-tab').forEach(btn => {
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     document.getElementById(btn.dataset.tab).classList.remove('hidden');
-    if (btn.dataset.tab === 'tab-skewt' && !skewtState.loaded && !skewtState.loading) loadSkewt();
+    if (btn.dataset.tab === 'tab-skewt' && !skewtState.loading) loadSkewt();
   });
 });
 
 /* ── SKEW-T ────────────────────────────────────────────────────────────────────────────── */
-const skewtState = { loaded: false, loading: false, times: [] };
+const skewtState = {
+  loaded: false, loading: false,
+  allTimes: [],        // all cached synoptic timestamps
+  times: [],           // filtered to current range (used by slider)
+  cache: new Map(),    // Map<time, {image, indices}>
+  _cachedStart: null,  // earliest date in cache (YYYY-MM-DD)
+  _cachedEnd: null,    // latest date in cache (YYYY-MM-DD)
+};
 
 function initSkewtModelSel(models) {
   const sel = document.getElementById('skewt-model-sel');
@@ -565,38 +582,109 @@ function initSkewtModelSel(models) {
 
 document.getElementById('skewt-model-sel').addEventListener('change', () => {
   skewtState.loaded = false;
+  skewtState.cache = new Map();
+  skewtState.allTimes = [];
+  skewtState._cachedStart = null;
+  skewtState._cachedEnd = null;
   loadSkewt();
 });
 
-document.getElementById('skewt-hour-sel').addEventListener('change', function () {
-  fetchSkewtTime(this.value);
-  updateNavArrows();
+/* ── Slider ── */
+document.getElementById('skewt-slider').addEventListener('input', function () {
+  const idx = parseInt(this.value);
+  const time = skewtState.times[idx];
+  if (time) {
+    document.getElementById('skewt-time-label').textContent = time;
+    showCachedSkewt(time);
+    updateNavArrows();
+  }
 });
 
 document.getElementById('skewt-prev').addEventListener('click', () => {
-  const sel = document.getElementById('skewt-hour-sel');
-  if (sel.selectedIndex > 0) {
-    sel.selectedIndex--;
-    fetchSkewtTime(sel.value);
-    updateNavArrows();
+  const slider = document.getElementById('skewt-slider');
+  if (parseInt(slider.value) > 0) {
+    slider.value = parseInt(slider.value) - 1;
+    slider.dispatchEvent(new Event('input'));
   }
 });
 
 document.getElementById('skewt-next').addEventListener('click', () => {
-  const sel = document.getElementById('skewt-hour-sel');
-  if (sel.selectedIndex < sel.options.length - 1) {
-    sel.selectedIndex++;
-    fetchSkewtTime(sel.value);
-    updateNavArrows();
+  const slider = document.getElementById('skewt-slider');
+  if (parseInt(slider.value) < parseInt(slider.max)) {
+    slider.value = parseInt(slider.value) + 1;
+    slider.dispatchEvent(new Event('input'));
   }
 });
 
 function updateNavArrows() {
-  const sel = document.getElementById('skewt-hour-sel');
-  document.getElementById('skewt-prev').disabled = sel.selectedIndex <= 0;
-  document.getElementById('skewt-next').disabled = sel.selectedIndex >= sel.options.length - 1;
+  const slider = document.getElementById('skewt-slider');
+  document.getElementById('skewt-prev').disabled = parseInt(slider.value) <= 0;
+  document.getElementById('skewt-next').disabled = parseInt(slider.value) >= parseInt(slider.max);
 }
 
+/* ── Helpers ── */
+function getSkewtReqRange() {
+  return {
+    start: _modalPayload?.date_start || document.getElementById('date-start').value,
+    end:   _modalPayload?.date_end   || document.getElementById('date-end').value,
+  };
+}
+
+/** Compute the date range NOT yet covered by the cache, or null if fully cached. */
+function getMissingRange(reqStart, reqEnd) {
+  if (!skewtState._cachedStart) return { start: reqStart, end: reqEnd };
+
+  const cs = new Date(skewtState._cachedStart + 'T00:00:00');
+  const ce = new Date(skewtState._cachedEnd + 'T00:00:00');
+  const rs = new Date(reqStart + 'T00:00:00');
+  const re = new Date(reqEnd + 'T00:00:00');
+
+  // Subset of cache → nothing to fetch
+  if (rs >= cs && re <= ce) return null;
+
+  // Extended on both sides → fetch full requested range (simpler)
+  if (rs < cs && re > ce) return { start: reqStart, end: reqEnd };
+
+  // Extended on the left only
+  if (rs < cs) {
+    const end = new Date(cs);
+    end.setDate(end.getDate() - 1);
+    return { start: reqStart, end: fmtDate(end) };
+  }
+
+  // Extended on the right only
+  const start = new Date(ce);
+  start.setDate(start.getDate() + 1);
+  return { start: fmtDate(start), end: reqEnd };
+}
+
+/** Filter allTimes to the requested range and populate the slider. */
+function applySkewtRange(reqStart, reqEnd) {
+  const rs = new Date(reqStart + 'T00:00:00');
+  const re = new Date(reqEnd + 'T23:00:00');
+
+  skewtState.times = skewtState.allTimes
+    .filter(t => {
+      const d = new Date(t.replace(' ', 'T'));
+      return d >= rs && d <= re;
+    })
+    .sort();
+
+  if (!skewtState.times.length) {
+    showSkewtError('No synoptic hours available for this range.');
+    return;
+  }
+
+  const slider = document.getElementById('skewt-slider');
+  slider.max  = Math.max(0, skewtState.times.length - 1);
+  slider.value = 0;
+  document.getElementById('skewt-time-label').textContent = skewtState.times[0];
+  document.getElementById('skewt-time-row').classList.remove('hidden');
+  updateNavArrows();
+  showCachedSkewt(skewtState.times[0]);
+}
+
+/* ── Data loading & cache ── */
 async function loadSkewt() {
   if (skewtState.loading) return;
   const model = document.getElementById('skewt-model-sel').value;
@@ -604,47 +692,56 @@ async function loadSkewt() {
     showSkewtError('Select a valid forecast or archive model.');
     return;
   }
+
+  const { start: reqStart, end: reqEnd } = getSkewtReqRange();
+  const missing = getMissingRange(reqStart, reqEnd);
+
+  if (!missing && skewtState.loaded) {
+    // Everything already cached → just filter
+    applySkewtRange(reqStart, reqEnd);
+    return;
+  }
+
   skewtState.loading = true;
   document.getElementById('skewt-spinner').classList.remove('hidden');
   document.getElementById('skewt-main').classList.add('hidden');
   document.getElementById('skewt-error').classList.add('hidden');
 
-  const result = await doFetchSkewt({ model, time: null });
+  const result = await doFetchSkewt({ model, date_start: missing.start, date_end: missing.end });
   skewtState.loading = false;
   if (!result) return;
 
-  skewtState.times  = result.times;
+  // Merge new data into the global cache
+  if (!skewtState._cachedStart || missing.start < skewtState._cachedStart) {
+    skewtState._cachedStart = missing.start;
+  }
+  if (!skewtState._cachedEnd || missing.end > skewtState._cachedEnd) {
+    skewtState._cachedEnd = missing.end;
+  }
+
+  for (const t of result.times) {
+    if (!skewtState.allTimes.includes(t)) {
+      skewtState.allTimes.push(t);
+    }
+    skewtState.cache.set(t, {
+      image: result.images[t],
+      indices: result.indices[t] || {},
+    });
+  }
+
   skewtState.loaded = true;
-
-  const hourSel = document.getElementById('skewt-hour-sel');
-  hourSel.innerHTML = result.times.map(t =>
-    `<option value="${t}"${t === result.time ? ' selected' : ''}>${t}</option>`
-  ).join('');
-  document.getElementById('skewt-time-row').classList.remove('hidden');
-  updateNavArrows();
-  showSkewtResult(result);
+  applySkewtRange(reqStart, reqEnd);
 }
 
-async function fetchSkewtTime(time) {
-  const model = document.getElementById('skewt-model-sel').value;
-  if (!model) return;
-  document.getElementById('skewt-spinner').classList.remove('hidden');
-  document.getElementById('skewt-main').classList.add('hidden');
-  document.getElementById('skewt-error').classList.add('hidden');
-  const result = await doFetchSkewt({ model, time });
-  if (result) showSkewtResult(result);
-}
-
-async function doFetchSkewt({ model, time }) {
+async function doFetchSkewt({ model, date_start, date_end }) {
   const payload = {
-    lat:        state.place.lat,
-    lon:        state.place.lon,
-    name:       state.place.name,
+    lat:  state.place.lat,
+    lon:  state.place.lon,
+    name: state.place.name,
     model,
-    date_start: document.getElementById('date-start').value,
-    date_end:   document.getElementById('date-end').value,
+    date_start,
+    date_end,
   };
-  if (time) payload.time = time;
   try {
     const res = await fetch('/api/skewt', {
       method: 'POST',
@@ -665,9 +762,11 @@ async function doFetchSkewt({ model, time }) {
   }
 }
 
-function showSkewtResult(result) {
-  document.getElementById('skewt-img').src = result.image;
-  renderSkewtIndices(result.indices || {});
+function showCachedSkewt(time) {
+  const entry = skewtState.cache.get(time);
+  if (!entry) return;
+  document.getElementById('skewt-img').src = entry.image;
+  renderSkewtIndices(entry.indices);
   document.getElementById('skewt-main').classList.remove('hidden');
 }
 
@@ -677,7 +776,7 @@ function renderSkewtIndices(idx) {
     { label: 'CIN',       value: idx.cin          != null ? idx.cin.toFixed(0)          : '—', unit: 'J/kg' },
     { label: 'LCL',       value: idx.lcl_hpa      != null ? idx.lcl_hpa.toFixed(0)      : '—', unit: 'hPa'  },
     { label: 'LCL T',     value: idx.lcl_temp     != null ? idx.lcl_temp.toFixed(1)     : '—', unit: '°C'   },
-    { label: 'T disparo', value: idx.trigger_temp != null ? idx.trigger_temp.toFixed(1) : '—', unit: idx.trigger_temp != null ? '°C' : '' },
+    { label: 'TCON',     value: idx.tcon         != null ? idx.tcon.toFixed(1)         : '—', unit: idx.tcon != null ? '°C' : '' },
   ];
   document.getElementById('skewt-indices').innerHTML =
     '<div class="idx-title">Índices</div>' +
@@ -697,6 +796,8 @@ function showSkewtError(msg) {
 
 /* ── ZOOM SLIDER ────────────────────────────────────────────────────────────────────────────── */
 function initZoomSliders(dateStart, dateEnd) {
+  _zoomOrigStart = dateStart;
+  _zoomOrigEnd = dateEnd;
   const n = Math.round((new Date(dateEnd + 'T00:00:00') - new Date(dateStart + 'T00:00:00')) / 86400000);
   const startSl = document.getElementById('zoom-start-sl');
   const endSl   = document.getElementById('zoom-end-sl');
@@ -718,10 +819,10 @@ function updateZoomFill() {
 }
 
 function updateZoomLabel() {
-  if (!_modalPayload) return;
+  if (!_zoomOrigStart) return;
   const startSl = document.getElementById('zoom-start-sl');
   const endSl   = document.getElementById('zoom-end-sl');
-  const base = new Date(_modalPayload.date_start + 'T00:00:00');
+  const base = new Date(_zoomOrigStart + 'T00:00:00');
   const d1 = new Date(base); d1.setDate(base.getDate() + parseInt(startSl.value));
   const d2 = new Date(base); d2.setDate(base.getDate() + parseInt(endSl.value));
   const fmt = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
@@ -743,10 +844,10 @@ document.getElementById('zoom-end-sl').addEventListener('input', function () {
 });
 
 document.getElementById('zoom-apply-btn').addEventListener('click', async () => {
-  if (!_modalPayload) return;
+  if (!_modalPayload || !_zoomOrigStart) return;
   const startSl = document.getElementById('zoom-start-sl');
   const endSl   = document.getElementById('zoom-end-sl');
-  const base     = new Date(_modalPayload.date_start + 'T00:00:00');
+  const base     = new Date(_zoomOrigStart + 'T00:00:00');
   const newStart = new Date(base); newStart.setDate(base.getDate() + parseInt(startSl.value));
   const newEnd   = new Date(base); newEnd.setDate(base.getDate() + parseInt(endSl.value));
 

@@ -421,7 +421,7 @@ class MeteoVrt:
         df = pd.DataFrame(data['hourly'])
         df['time'] = pd.to_datetime(df['time'])
         for level in self.LEVELS_SKEWT:
-            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction']:
+            for var in ['temperature', 'relative_humidity', 'wind_speed', 'wind_direction', 'geopotential_height']:
                 col = f'{var}_{level}hPa'
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -430,7 +430,7 @@ class MeteoVrt:
     def _skewt_arrays(self, time: str):
         """
         Extract profile arrays from _datos_skewt for a given time.
-        Returns (actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals).
+        Returns (actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, geo_vals).
         """
         if self._datos_skewt is None:
             self._fetch_skewt_data()
@@ -439,12 +439,13 @@ class MeteoVrt:
         row = self._datos_skewt.loc[idx]
         actual_time = self._datos_skewt.loc[idx, 'time']
 
-        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = [], [], [], [], []
+        pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, geo_vals = [], [], [], [], [], []
         for level in sorted(self.LEVELS_SKEWT, reverse=True):
             col_t  = f'temperature_{level}hPa'
             col_rh = f'relative_humidity_{level}hPa'
             col_ws = f'wind_speed_{level}hPa'
             col_wd = f'wind_direction_{level}hPa'
+            col_g  = f'geopotential_height_{level}hPa'
             T  = row[col_t]  if col_t  in row.index else np.nan
             rh = row[col_rh] if col_rh in row.index else np.nan
             if pd.isna(T) or pd.isna(rh):
@@ -459,18 +460,20 @@ class MeteoVrt:
                  if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
             v = (-ws_kt * np.cos(np.radians(wd))
                  if not pd.isna(ws_kt) and not pd.isna(wd) else np.nan)
+            gh = row[col_g] if col_g in row.index else np.nan
             pressure_vals.append(level)
             temp_vals.append(T)
             dewp_vals.append(Td)
             u_vals.append(u)
             v_vals.append(v)
-        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals
+            geo_vals.append(gh)
+        return actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, geo_vals
 
     def compute_skewt_indices(self, time: str) -> dict:
         """
         Compute thermodynamic indices for a single time step.
 
-        Returns dict with keys: cape, cin, lcl_hpa, lcl_temp, trigger_temp.
+        Returns dict with keys: cape, cin, lcl_hpa, lcl_temp, tcon.
         All temperatures in °C, pressures in hPa, energy in J/kg.
         Returns {} on any error.
         """
@@ -478,10 +481,12 @@ class MeteoVrt:
             import metpy.calc as mpcalc
             from metpy.units import units as munits
         except ImportError:
+            print("skewt indices: metpy not available")
             return {}
         try:
-            _, pv, tv, tdv, _, _ = self._skewt_arrays(time)
+            _, pv, tv, tdv, _, _, _ = self._skewt_arrays(time)
             if len(pv) < 3:
+                print(f"skewt indices: only {len(pv)} levels, need ≥3")
                 return {}
             p     = np.array(pv) * munits.hPa
             T_arr = np.array(tv) * munits.degC
@@ -490,28 +495,34 @@ class MeteoVrt:
             # LCL
             p_lcl, T_lcl = mpcalc.lcl(p[0], T_arr[0], Td_arr[0])
 
-            # CAPE / CIN
-            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr)
+            # Parcel profile for CAPE/CIN
+            parcel = mpcalc.parcel_profile(p, T_arr[0], Td_arr[0])
+            cape, cin = mpcalc.cape_cin(p, T_arr, Td_arr, parcel)
 
-            # Trigger temperature via CCL
-            trigger_temp = None
+            # Convective temperature (TCON) via CCL + dry lapse
+            tcon = None
             try:
                 p_ccl, T_ccl = mpcalc.ccl(p, T_arr, Td_arr)[:2]
                 T_trigger = mpcalc.dry_lapse(
                     np.atleast_1d(p[0]), T_ccl, reference_pressure=p_ccl
                 )[0]
-                trigger_temp = float(T_trigger.to('degC').magnitude)
-            except Exception:
-                pass
+                tcon = float(T_trigger.to('degC').magnitude)
+            except Exception as e:
+                print(f"skewt indices: TCON failed: {e}")
 
-            return {
-                'cape':         round(float(cape.magnitude), 1),
-                'cin':          round(float(cin.magnitude), 1),
-                'lcl_hpa':      round(float(p_lcl.magnitude), 1),
-                'lcl_temp':     round(float(T_lcl.to('degC').magnitude), 1),
-                'trigger_temp': round(trigger_temp, 1) if trigger_temp is not None else None,
+            result = {
+                'cape':    round(float(cape.magnitude), 1),
+                'cin':     round(float(cin.magnitude), 1),
+                'lcl_hpa': round(float(p_lcl.magnitude), 1),
+                'lcl_temp': round(float(T_lcl.to('degC').magnitude), 1),
             }
-        except Exception:
+            if tcon is not None:
+                result['tcon'] = round(tcon, 1)
+            print(f"skewt indices OK: CAPE={result.get('cape')}, CIN={result.get('cin')}, "
+                  f"LCL={result.get('lcl_hpa')}hPa, TCON={result.get('tcon')}")
+            return result
+        except Exception as e:
+            print(f"skewt indices error: {e}")
             return {}
 
     def skewt(self, time: str) -> plt.Figure:
@@ -535,7 +546,7 @@ class MeteoVrt:
         if self.datos is None:
             raise ValueError("No vertical data. Call get_data() first.")
 
-        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals = \
+        actual_time, pressure_vals, temp_vals, dewp_vals, u_vals, v_vals, geo_vals = \
             self._skewt_arrays(time)
 
         if not pressure_vals:
@@ -550,8 +561,8 @@ class MeteoVrt:
         fig = plt.figure(figsize=(8, 9))
         skew = SkewT(fig, rotation=45)
 
-        skew.plot(p, T_arr, 'r', linewidth=2, label='Temperature')
-        skew.plot(p, Td_arr, 'g', linewidth=2, label='Dewpoint')
+        skew.plot(p, T_arr, 'r', linewidth=2)
+        skew.plot(p, Td_arr, 'g', linewidth=2)
 
         valid_wind = np.isfinite(u_arr.magnitude) & np.isfinite(v_arr.magnitude)
         if valid_wind.any():
@@ -562,16 +573,22 @@ class MeteoVrt:
         skew.plot_mixing_lines(alpha=0.2, linewidths=0.7)
 
         skew.ax.set_ylim(1050, min(pressure_vals) - 10)
-        skew.ax.set_xlim(-30, 45)
+        skew.ax.set_xlim(-30, 55)
         skew.ax.set_xlabel('Temperature (°C)')
         skew.ax.set_ylabel('Pressure (hPa)')
+
+        # Geopotential height annotations (right side of data, inside the plot)
+        for lvl, gh in zip(pressure_vals, geo_vals):
+            if gh is not None and not (isinstance(gh, float) and np.isnan(gh)):
+                skew.ax.annotate(f'{int(round(gh))} m', xy=(38, lvl),
+                                 fontsize=6, color='#cc3333', fontfamily='monospace',
+                                 ha='left', va='center')
 
         time_label = actual_time.strftime('%Y-%m-%d %H:%M UTC') \
             if hasattr(actual_time, 'strftime') else str(actual_time)
         skew.ax.set_title(
-            f'Skew-T Log-P — {self.source_name} | {self.name}\n{time_label}',
+            f'Skew-T {self.name} ({self.lat:.2f}, {self.lon:.2f})\n{time_label}',
             fontsize=10, fontweight='bold',
         )
-        skew.ax.legend(loc='upper left', fontsize=8)
         fig.tight_layout()
         return fig
